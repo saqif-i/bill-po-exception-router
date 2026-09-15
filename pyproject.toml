@@ -1,0 +1,20 @@
+[project]
+name = "bill-po-exception-router"
+version = "0.1.0"
+description = "Bill-to-purchase-order exception router"
+requires-python = ">=3.12"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["migrations"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "S", "C4", "SIM", "RUF"]
+ignore = ["S101"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S105", "S106"]
+
+[tool.ruff.format]
+quote-style = "double"

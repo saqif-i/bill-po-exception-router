@@ -1,0 +1,6 @@
+# Major-version constraints only. Compiled with `make lock`.
+-c requirements.txt
+pytest>=8,<9
+pytest-asyncio
+ruff
+pip-audit

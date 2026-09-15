@@ -1,0 +1,59 @@
+# Images are pinned by tag AND digest (Volume 01 section 9.4). A floating tag
+# would make "the same docker compose up" mean two different things on two
+# days, which contradicts the locked dependency set.
+services:
+  postgres:
+    image: ${POSTGRES_IMAGE:?set POSTGRES_IMAGE to a tag@sha256 digest pair}
+    environment:
+      POSTGRES_USER: ${POSTGRES_BOOTSTRAP_USER:?}
+      POSTGRES_PASSWORD: ${POSTGRES_BOOTSTRAP_PASSWORD:?}
+      POSTGRES_DB: postgres
+      APP_DB_NAME: ${APP_DB_NAME:-bpr}
+      N8N_DB_NAME: ${N8N_DB_NAME:-n8n}
+      BPR_OWNER_USER: ${BPR_OWNER_USER:-bpr_owner}
+      BPR_OWNER_PASSWORD: ${BPR_OWNER_PASSWORD:?}
+      N8N_DB_USER: ${N8N_DB_USER:-n8n_app}
+      N8N_DB_PASSWORD: ${N8N_DB_PASSWORD:?}
+    volumes:
+      # Runs once, on first initialisation of the data volume only.
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      # Published on 5433 because macOS installs commonly hold 5432. The
+      # container-internal port is unchanged, so BPR_DATABASE_URL still uses
+      # postgres:5432: that connection never leaves the Docker network.
+      # Bound to loopback. Without the address, Docker publishes on every
+      # interface, so a laptop on a cafe network exposes the database.
+      - "127.0.0.1:${POSTGRES_PUBLISHED_PORT:-5433}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  policy_service:
+    build:
+      context: .
+      args:
+        PYTHON_BASE_IMAGE: ${PYTHON_BASE_IMAGE:?set PYTHON_BASE_IMAGE to a tag@sha256 digest pair}
+    environment:
+      # The runtime role. Never the owner, never the bootstrap superuser.
+      BPR_DATABASE_URL: ${BPR_DATABASE_URL:?}
+      INTERNAL_BEARER_TOKEN: ${INTERNAL_BEARER_TOKEN:?}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      XERO_WRITE_MODE: ${XERO_WRITE_MODE:-disabled}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      # Loopback only. Slack reaches this through the tunnel in Part 8,
+      # which terminates locally, so nothing needs a public bind.
+      - "127.0.0.1:8000:8000"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/healthz').status==200 else 1)\""]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
+volumes:
+  postgres_data:

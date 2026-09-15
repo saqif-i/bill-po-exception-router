@@ -1,0 +1,30 @@
+# secrets, never committed
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+
+# generated artefacts
+demo_seed/manifests/
+evaluations/results/*
+!evaluations/results/.gitkeep
+
+# n8n data volume
+n8n/data/
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+.coverage
+
+# editors and os
+.DS_Store
+.idea/
+.vscode/

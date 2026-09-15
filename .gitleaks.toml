@@ -1,0 +1,44 @@
+# gitleaks configuration. CI scans the full history on every push and pull
+# request. Local equivalent: scripts/verify_no_secrets.sh
+
+title = "bill-po-exception-router"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "xero-client-secret"
+description = "Xero Custom Connection client secret"
+regex = '''(?i)xero[_-]?client[_-]?secret["'\s:=]+[A-Za-z0-9_\-]{30,}'''
+tags = ["xero", "secret"]
+
+[[rules]]
+id = "anthropic-api-key"
+description = "Anthropic API key"
+regex = '''sk-ant-[A-Za-z0-9_\-]{20,}'''
+tags = ["anthropic", "secret"]
+
+[[rules]]
+id = "slack-token"
+description = "Slack token"
+regex = '''xox[baprs]-[A-Za-z0-9-]{10,}'''
+tags = ["slack", "secret"]
+
+[[rules]]
+id = "slack-signing-secret"
+description = "Slack signing secret"
+regex = '''(?i)slack[_-]?signing[_-]?secret["'\s:=]+[a-f0-9]{32}'''
+tags = ["slack", "secret"]
+
+[allowlist]
+description = "documented placeholders only"
+# Narrow by VALUE, not by path. Exempting all of docs/, tests/fixtures/ and
+# .env.example would mean a real credential pasted into any of them is never
+# seen, and those are three of the likeliest places for one to land.
+regexes = [
+  # The placeholder form used throughout .env.example.
+  '''<<[A-Z0-9_]+>>''',
+  # The synthetic Slack signing secret used in the unit tests, listed by its
+  # exact value so no other 32-character hex string is exempt.
+  '''8f742231b10e8888abcd99yyyzzz85a5''',
+]
