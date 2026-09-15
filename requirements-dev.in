@@ -1,6 +1,14 @@
-# Major-version constraints only. Compiled with `make lock`.
+# Development and test tooling.
+#
+# Constraints are bounded where a package publishes stable major versions, and
+# left open where a bound would block a security fix for no benefit. An upper
+# bound is a promise that the next major breaks you, and it should be there
+# because you checked, not by habit.
 -c requirements.txt
-pytest>=8,<9
+
+# >=9 rather than <9: pytest 8.4.2 carries PYSEC-2026-1845, fixed in 9.0.3.
+# The whole suite was run on 9 before this bound moved.
+pytest>=9,<10
 pytest-asyncio
 ruff
 pip-audit
