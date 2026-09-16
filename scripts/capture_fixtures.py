@@ -20,6 +20,7 @@ import sys
 import httpx
 
 from policy_service.config import get_settings
+from policy_service.domain.normalisation import split_bill_reference
 from policy_service.integrations import xero_parsing
 from policy_service.integrations.xero_auth import (
     TokenCache,
@@ -92,21 +93,38 @@ def main() -> int:
     ]
     print(f"bills: {len(bills.get('Invoices', []))} returned, {len(seeded)} look seeded")
 
-    for invoice in seeded:
-        number = invoice["InvoiceNumber"]
-        written.append(_write(f"bills/{number}.json", {"Invoices": [invoice]}))
+    seen: dict[str, int] = {}
+    captured_orders: set[str] = set()
 
-        reference = str(invoice.get("Reference") or "").strip()
-        if not reference:
+    for invoice in seeded:
+        # An ACCPAY bill has ONE free-text field: the UI labels it Reference and
+        # the API returns it as InvoiceNumber, so the supplier's number and the
+        # purchase-order reference share it. `Reference` is ACCREC only and is
+        # always empty here, which is why nothing was ever fetched from it.
+        invoice_number, po_reference = split_bill_reference(invoice["InvoiceNumber"])
+
+        # Fixture 6 is a SECOND bill carrying the same invoice number, which is
+        # the duplicate it exists to demonstrate. One filename would silently
+        # keep only the last of them.
+        seen[invoice_number] = seen.get(invoice_number, 0) + 1
+        suffix = "" if seen[invoice_number] == 1 else f"--{seen[invoice_number]}"
+        written.append(_write(f"bills/{invoice_number}{suffix}.json", {"Invoices": [invoice]}))
+
+        if not po_reference:
+            print(f"  {invoice_number}: names no purchase order, which is fixture 7")
+            continue
+        if po_reference in captured_orders:
             continue
         try:
-            order = client.get_purchase_order(reference)
+            order = client.get_purchase_order(po_reference)
         except Exception as exc:
-            print(f"  {number}: no purchase order for {reference!r} ({type(exc).__name__})")
+            print(f"  {invoice_number}: no purchase order {po_reference} ({type(exc).__name__})")
             continue
-        written.append(_write(f"purchase_orders/{reference}.json", order))
+        captured_orders.add(po_reference)
+        written.append(_write(f"purchase_orders/{po_reference}.json", order))
 
     print(f"\nwrote {len(written)} fixture files under {OUT}")
+    print(f"  {len(seen)} distinct bill numbers, {len(captured_orders)} purchase orders")
     for path in written:
         print(f"  {path.relative_to(OUT.parent.parent)}")
     print(
