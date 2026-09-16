@@ -42,6 +42,25 @@ services:
       INTERNAL_BEARER_TOKEN: ${INTERNAL_BEARER_TOKEN:?}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       XERO_WRITE_MODE: ${XERO_WRITE_MODE:-disabled}
+
+      # Compose passes through ONLY what is listed here. A variable in .env that
+      # is not named below never reaches the container, and the service reports
+      # the provider as unconfigured rather than misbehaving.
+      #
+      # Optional by design (`:-`), so the stack starts before Parts 4, 7 and 8
+      # have supplied them and the tests keep running without any credential.
+      XERO_CLIENT_ID: ${XERO_CLIENT_ID:-}
+      XERO_CLIENT_SECRET: ${XERO_CLIENT_SECRET:-}
+      XERO_SCOPES: ${XERO_SCOPES:-accounting.transactions.read accounting.settings.read accounting.contacts.read}
+      XERO_EXPECTED_ORG_NAME: ${XERO_EXPECTED_ORG_NAME:-Demo Company}
+
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      SEMANTIC_REVIEW_ENABLED: ${SEMANTIC_REVIEW_ENABLED:-false}
+      SEMANTIC_MODEL_ID: ${SEMANTIC_MODEL_ID:-}
+      SEMANTIC_MIN_CONFIDENCE: ${SEMANTIC_MIN_CONFIDENCE:-0.6}
+
+      SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN:-}
+      SLACK_SIGNING_SECRET: ${SLACK_SIGNING_SECRET:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -55,5 +74,27 @@ services:
       timeout: 5s
       retries: 6
 
+  n8n:
+    image: ${N8N_IMAGE:?set N8N_IMAGE to a tag@sha256 digest pair}
+    environment:
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: postgres
+      DB_POSTGRESDB_DATABASE: ${N8N_DB_NAME:-n8n}
+      DB_POSTGRESDB_USER: ${N8N_DB_USER:-n8n_app}
+      DB_POSTGRESDB_PASSWORD: ${N8N_DB_PASSWORD:?}
+      # The ONLY application secret n8n holds (ADR-002). It reaches the service
+      # by container name: inside a container, localhost is that container.
+      POLICY_SERVICE_URL: http://policy_service:8000
+      N8N_SECURE_COOKIE: "false"
+      GENERIC_TIMEZONE: ${GENERIC_TIMEZONE:-Australia/Melbourne}
+    ports:
+      - "127.0.0.1:5678:5678"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - n8n_data:/home/node/.n8n
+
 volumes:
   postgres_data:
+  n8n_data:
