@@ -32,6 +32,24 @@ class Settings(BaseSettings):
     # I08: unset resolves to disabled; an unknown value refuses to start.
     xero_write_mode: str = Field(default="disabled", alias="XERO_WRITE_MODE")
 
+    # Xero Custom Connection. Optional so the service still starts for unit
+    # tests and for anyone who has not connected a provider yet.
+    xero_client_id: str | None = Field(default=None, alias="XERO_CLIENT_ID")
+    xero_client_secret: str | None = Field(default=None, alias="XERO_CLIENT_SECRET")
+    xero_scopes: str = Field(
+        default="accounting.transactions.read accounting.settings.read accounting.contacts.read",
+        alias="XERO_SCOPES",
+    )
+    # Live tests refuse to run against anything that is not this organisation.
+    xero_expected_org_name: str = Field(default="Demo Company", alias="XERO_EXPECTED_ORG_NAME")
+    xero_connect_timeout_seconds: float = Field(default=10.0, alias="XERO_CONNECT_TIMEOUT_SECONDS")
+    xero_read_timeout_seconds: float = Field(default=30.0, alias="XERO_READ_TIMEOUT_SECONDS")
+    xero_max_attempts: int = Field(default=4, alias="XERO_MAX_ATTEMPTS")
+
+    # Default off (Volume 08 section 9.2). Part 7 turns it on, and only after
+    # the provider questions in docs/security.md have been answered.
+    semantic_review_enabled: bool = Field(default=False, alias="SEMANTIC_REVIEW_ENABLED")
+
     @field_validator("xero_write_mode")
     @classmethod
     def _write_mode_fails_closed(cls, value: str) -> str:
