@@ -16,7 +16,7 @@ _pool: ConnectionPool | None = None
 # Every migration this build expects to find applied.
 # Part 5 adds 003 here. Readiness reports MIGRATIONS_NOT_READY until every
 # listed migration is applied, so this list grows with the schema.
-REQUIRED_MIGRATIONS = ("001_core_schema.sql",)
+REQUIRED_MIGRATIONS = ("001_core_schema.sql", "003_reconciliation.sql")
 
 
 def get_pool() -> ConnectionPool:
