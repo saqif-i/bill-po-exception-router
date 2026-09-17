@@ -45,6 +45,26 @@ outcome is genuinely unknown.
 an outcome set while still reconciling. The event log is append-only by trigger
 and by privilege. Triage decisions are immutable.
 
+### The same wording difference, two outcomes
+
+A supplier billed for bottled water. The bill and the purchase order describe it
+differently. On one, every number agrees; on the other, the unit price is five
+dollars higher.
+
+![A wording recommendation, with evidence quoted from the supplier's own text](docs/images/card-recommendation.png)
+
+![The same wording difference, with the gate closed and the reason recorded](docs/images/card-refused.png)
+
+The model was consulted once and refused once, and the card says which happened
+either way. The recommendation is labelled as context: it changed no outcome and
+was not a routing input.
+
+Note the second card carries six exception codes from one root cause. The unit
+price differs, so the line amount differs, so the line tax differs, so both
+totals differ. It routes to procurement rather than finance because routing
+follows the **cause**, not the symptom: header aggregates like `TOTAL_VARIANCE`
+are consulted only when nothing more specific is present.
+
 ## How it works
 
 ```
@@ -56,6 +76,8 @@ Xero bill -> deterministic reconciliation -> outcome
                        number on it agrees: ask a model about the wording
                     -> Slack card -> a person decides -> recorded
 ```
+
+![Nine bills, their outcomes, destinations and gate reasons](docs/images/routing.png)
 
 ## Running it
 
@@ -72,9 +94,33 @@ make gate                   # lint, tests, db boundary, secret scan
 Tests run without any provider credential:
 
 ```bash
-pytest                      # live tests are excluded by default
+make test                   # live tests are excluded by default
 pytest -m live              # only if you have configured Xero
 ```
+
+## Results
+
+Measured on nine seeded bills and a hand-labelled evaluation set. Reproduce with
+`python scripts/capture_metrics.py` and `python evaluations/run_eval.py --live`.
+
+**The invocation gate.** All eight cases in `account_code_gate_v1` were excluded
+before any model call, on every run. That set exists to be excluded: a single
+leak is a bug, not a tuning problem.
+
+**Where the model was consulted.** Once, out of nine bills. The other eight
+reached a human on deterministic exceptions alone.
+
+**Agreement.** On `line_semantics_v1` the model answered six of eight cases and
+agreed with the label every time. It declined the other two, which are the two
+labelled `INSUFFICIENT_EVIDENCE`: "Consumables" against "Misc items", and "Item"
+against "Goods". Neither is resolvable from the supplied text, and a system that
+answered confidently there would be worse than one that declines.
+
+**Model and prompt.** `claude-haiku-4-5-20251001`, prompt `line_semantics.v1`.
+Both are recorded on every attempt, so a change in these numbers can be
+attributed to a model change, a prompt change, or neither.
+
+![Gate exclusion and agreement rate](docs/images/evaluation.png)
 
 ## Documentation
 
@@ -87,18 +133,10 @@ pytest -m live              # only if you have configured Xero
 | [`docs/invariant-register-v1.md`](docs/invariant-register-v1.md) | All 40 invariants and their status |
 | [`docs/security.md`](docs/security.md) | Credentials, what leaves the machine, redaction |
 | [`docs/responsible-ai.md`](docs/responsible-ai.md) | The commitments, and how they are enforced |
-| [`docs/runbook.md`](docs/runbook.md) | Six failures, each deliberately triggered |
+| [`docs/runbook.md`](docs/runbook.md) | Failures, each deliberately triggered |
 | [`docs/limitations-and-roadmap.md`](docs/limitations-and-roadmap.md) | What this does not do, and why |
 | [`docs/platform-mapping.md`](docs/platform-mapping.md) | What would change on SnapLogic or Tray |
 | [`DECISIONS.md`](DECISIONS.md) | Eight decisions, with the alternatives rejected |
-
-## Results
-
-Run `python scripts/capture_metrics.py` and
-`python evaluations/run_eval.py --live` and paste your own numbers here.
-
-**Claim nothing you have not measured.** Until you have run both, this section
-stays empty, and an empty section is more credible than an invented one.
 
 ## What it deliberately does not do
 
