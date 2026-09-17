@@ -1,0 +1,8 @@
+{"id": "gate-01", "note": "account codes differ; wording also differs", "po_line": "Water, bottled, case of 24", "bill_line": "24x 500ml bottled water", "bill_line_overrides": {"AccountCode": "0020"}}
+{"id": "gate-02", "note": "bill account code missing", "po_line": "Water, bottled, case of 24", "bill_line": "24x 500ml bottled water", "bill_line_overrides": {"AccountCode": null}}
+{"id": "gate-03", "note": "account code not in the chart", "po_line": "Water, bottled, case of 24", "bill_line": "24x 500ml bottled water", "bill_line_overrides": {"AccountCode": "9999"}, "account_code": "9999"}
+{"id": "gate-04", "note": "unit price differs as well as wording", "po_line": "Water, bottled, case of 24", "bill_line": "24x 500ml bottled water", "bill_line_overrides": {"UnitAmount": "53.00", "LineAmount": "265.00"}}
+{"id": "gate-05", "note": "quantity differs as well as wording", "po_line": "Water, bottled, case of 24", "bill_line": "24x 500ml bottled water", "bill_line_overrides": {"Quantity": "6"}}
+{"id": "gate-06", "note": "tax type differs as well as wording", "po_line": "Water, bottled, case of 24", "bill_line": "24x 500ml bottled water", "bill_line_overrides": {"TaxType": "EXEMPTINPUT"}}
+{"id": "gate-07", "note": "line tax differs as well as wording", "po_line": "Water, bottled, case of 24", "bill_line": "24x 500ml bottled water", "bill_line_overrides": {"TaxAmount": "30.00"}}
+{"id": "gate-08", "note": "account code format invalid", "po_line": "Water, bottled, case of 24", "bill_line": "24x 500ml bottled water", "bill_line_overrides": {"AccountCode": "00 10"}}

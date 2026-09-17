@@ -1,0 +1,8 @@
+{"id": "sem-01", "po_line": "Water, bottled, case of 24", "bill_line": "24x 500ml bottled water, assorted", "expected": "LIKELY_EQUIVALENT"}
+{"id": "sem-02", "po_line": "Office chairs, ergonomic mesh", "bill_line": "Ergonomic mesh task chairs", "expected": "LIKELY_EQUIVALENT"}
+{"id": "sem-03", "po_line": "Standing desk frame", "bill_line": "Desk lamp, LED", "expected": "LIKELY_DIFFERENT"}
+{"id": "sem-04", "po_line": "Monitor arm, dual", "bill_line": "Monitor arm, single", "expected": "LIKELY_DIFFERENT"}
+{"id": "sem-05", "po_line": "Consumables", "bill_line": "Misc items", "expected": "INSUFFICIENT_EVIDENCE"}
+{"id": "sem-06", "po_line": "Item", "bill_line": "Goods", "expected": "INSUFFICIENT_EVIDENCE"}
+{"id": "sem-07", "po_line": "A4 copy paper, 80gsm, box of 5 reams", "bill_line": "Copy paper A4 80 gsm 5x ream box", "expected": "LIKELY_EQUIVALENT"}
+{"id": "sem-08", "po_line": "Whiteboard markers, black, pack of 10", "bill_line": "Whiteboard erasers, pack of 10", "expected": "LIKELY_DIFFERENT"}

@@ -1,0 +1,54 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "recommendation",
+    "confidence",
+    "explanation",
+    "evidence"
+  ],
+  "properties": {
+    "recommendation": {
+      "type": "string",
+      "enum": [
+        "LIKELY_EQUIVALENT",
+        "LIKELY_DIFFERENT",
+        "INSUFFICIENT_EVIDENCE"
+      ],
+      "description": "Whether the two descriptions plausibly refer to the same item or service. Use INSUFFICIENT_EVIDENCE when the supplied text does not support a confident view; that is a correct answer, not a failure."
+    },
+    "confidence": {
+      "type": "number",
+      "description": "Confidence in the recommendation. Must be between 0 and 1 inclusive."
+    },
+    "explanation": {
+      "type": "string",
+      "description": "One or two plain sentences a non-technical reviewer can read. Must be 400 characters or fewer. Do not mention prices, quantities, totals, tax, approval or any recommended action."
+    },
+    "evidence": {
+      "type": "array",
+      "description": "Between 1 and 4 short spans copied verbatim from the supplied descriptions. Each span must appear character for character in the description named by its source field.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "source",
+          "text"
+        ],
+        "properties": {
+          "source": {
+            "type": "string",
+            "enum": [
+              "PURCHASE_ORDER_LINE",
+              "BILL_LINE"
+            ]
+          },
+          "text": {
+            "type": "string",
+            "description": "A verbatim span from the named description."
+          }
+        }
+      }
+    }
+  }
+}

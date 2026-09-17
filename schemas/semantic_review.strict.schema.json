@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "semantic_review.strict",
+  "description": "Applied server-side AFTER the response returns. Carries the bounds the model-facing schema can only describe in prose.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "recommendation",
+    "confidence",
+    "explanation",
+    "evidence"
+  ],
+  "properties": {
+    "recommendation": {
+      "type": "string",
+      "enum": [
+        "LIKELY_EQUIVALENT",
+        "LIKELY_DIFFERENT",
+        "INSUFFICIENT_EVIDENCE"
+      ]
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "explanation": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 400
+    },
+    "evidence": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 4,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "source",
+          "text"
+        ],
+        "properties": {
+          "source": {
+            "type": "string",
+            "enum": [
+              "PURCHASE_ORDER_LINE",
+              "BILL_LINE"
+            ]
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        }
+      }
+    }
+  }
+}

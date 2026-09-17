@@ -15,6 +15,8 @@ set -euo pipefail
 
 APP_DB="${APP_DB_NAME:-bpr}"
 N8N_DB="${N8N_DB_NAME:-n8n}"
+# Integration tests write here, never into the application database.
+TEST_DB="${TEST_DB_NAME:-bpr_test}"
 OWNER="${BPR_OWNER_USER:-bpr_owner}"
 N8N_USER="${N8N_DB_USER:-n8n_app}"
 
@@ -28,7 +30,7 @@ N8N_USER="${N8N_DB_USER:-n8n_app}"
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname postgres \
      -v owner="$OWNER" -v owner_pw="$BPR_OWNER_PASSWORD" \
      -v n8n_user="$N8N_USER" -v n8n_pw="$N8N_DB_PASSWORD" \
-     -v app_db="$APP_DB" -v n8n_db="$N8N_DB" <<-SQL
+     -v app_db="$APP_DB" -v n8n_db="$N8N_DB" -v test_db="$TEST_DB" <<-SQL
     -- 3. owner role. CREATEROLE so migration 001 can create the runtime roles
     --    without ever handing out the superuser credential.
     CREATE ROLE :"owner" LOGIN CREATEROLE PASSWORD :'owner_pw';
@@ -38,6 +40,11 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname postgres \
 
     -- 1, 2. the two databases.
     CREATE DATABASE :"app_db" OWNER :"owner";
+
+    -- A separate database for the integration tests. Without it they write
+    -- fixtures, runs and decisions into the application database, and the demo
+    -- query in Part 7 comes back full of rows from a fake model.
+    CREATE DATABASE :"test_db" OWNER :"owner";
     CREATE DATABASE :"n8n_db" OWNER :"n8n_user";
 
     -- 5. n8n may reach its own database.
@@ -45,6 +52,7 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname postgres \
 
     -- 6, 7. the boundary, stated explicitly rather than implied.
     REVOKE CONNECT ON DATABASE :"app_db" FROM :"n8n_user";
+    REVOKE CONNECT ON DATABASE :"test_db" FROM :"n8n_user";
     REVOKE CONNECT ON DATABASE :"app_db" FROM PUBLIC;
 SQL
 

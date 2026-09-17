@@ -12,6 +12,17 @@ import os
 
 import pytest
 
+# Integration tests create fixtures, runs and decisions. Left pointed at the
+# application database they pollute the demo: you run `make gate`, then query
+# for your nine bills and find forty rows from a fake model.
+#
+# So they run against a SEPARATE database when one is configured. This is done
+# at module level rather than in a fixture because pytest imports conftest
+# before collecting the test modules, and those read the variable at import.
+_TEST_DB = os.environ.get("BPR_TEST_DATABASE_URL")
+if _TEST_DB:
+    os.environ["BPR_OWNER_DATABASE_URL"] = _TEST_DB
+
 # Defaults for unit tests, which never reach a database or a provider.
 TEST_ENV = {
     "BPR_DATABASE_URL": "postgresql://bpr_app:not-a-real-password@localhost:5433/bpr",

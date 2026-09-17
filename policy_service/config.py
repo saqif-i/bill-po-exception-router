@@ -49,6 +49,20 @@ class Settings(BaseSettings):
     # Default off (Volume 08 section 9.2). Part 7 turns it on, and only after
     # the provider questions in docs/security.md have been answered.
     semantic_review_enabled: bool = Field(default=False, alias="SEMANTIC_REVIEW_ENABLED")
+    anthropic_api_key: str | None = Field(default=None, alias="ANTHROPIC_API_KEY")
+
+    # Haiku 4.5 is the low-cost tier for classification and extraction, which is
+    # exactly this task: one question about two short strings, with verbatim
+    # evidence attached. It is also the only current id carrying a DATE, so
+    # pinning it actually pins it. Move up to claude-sonnet-5 only if your own
+    # evaluation gives you a reason (Part 7 Stage 7.7).
+    semantic_model_id: str = Field(default="claude-haiku-4-5-20251001", alias="SEMANTIC_MODEL_ID")
+    semantic_min_confidence: float = Field(default=0.6, alias="SEMANTIC_MIN_CONFIDENCE")
+    semantic_timeout_seconds: float = Field(default=30.0, alias="SEMANTIC_TIMEOUT_SECONDS")
+
+    # Slack. Optional, so the service starts before Part 8 is built.
+    slack_bot_token: str | None = Field(default=None, alias="SLACK_BOT_TOKEN")
+    slack_signing_secret: str | None = Field(default=None, alias="SLACK_SIGNING_SECRET")
 
     @field_validator("xero_write_mode")
     @classmethod

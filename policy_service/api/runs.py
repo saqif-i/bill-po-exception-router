@@ -212,13 +212,63 @@ def semantic_review(
     request: Request,
     principal: str = Depends(require_internal_bearer),
 ) -> JSONResponse:
-    """Part 7 implements this. The route exists now so the n8n workflow can be
-    built and exported once rather than re-edited later."""
-    validate_key(request)
-    return JSONResponse(
-        status_code=501,
-        content=_body(request, {"error": "NOT_IMPLEMENTED", "implemented_in": "Part 7"}),
-    )
+    """Ask for a bounded recommendation on wording, if the gate permits it.
+
+    Every path here ends with the run reaching a human. There is no branch in
+    which a recommendation replaces a review.
+    """
+    from policy_service.domain import semantic
+    from policy_service.integrations.claude_client import ClaudeClient
+
+    key = validate_key(request)
+    operation = "runs-semantic-review"
+    correlation_id = uuid.UUID(request.state.correlation_id)
+    request_hash = canonical_hash(principal, operation, {"run_id": str(run_id)})
+    settings = get_settings()
+
+    if not settings.anthropic_api_key:
+        raise ServiceError(code="SEMANTIC_NOT_CONFIGURED", status_code=503)
+
+    with get_pool().connection() as conn:
+        claim = idempotency_store.claim(
+            conn,
+            scope=scope(principal, operation),
+            key=key,
+            request_hash=request_hash,
+            correlation_id=correlation_id,
+            owner_id=principal,
+        )
+        if claim.replayed:
+            return JSONResponse(
+                status_code=claim.result_status or 200,
+                content=_body(request, dict(claim.result_summary or {})),
+                headers={"Idempotency-Replayed": "true"},
+            )
+        conn.commit()
+
+        client = ClaudeClient(
+            api_key=settings.anthropic_api_key,
+            model=settings.semantic_model_id,
+            timeout_seconds=settings.semantic_timeout_seconds,
+        )
+        try:
+            summary = semantic.review(
+                conn,
+                run_id=run_id,
+                correlation_id=correlation_id,
+                client=client,
+                min_confidence=settings.semantic_min_confidence,
+                enabled_flag=settings.semantic_review_enabled,
+            )
+        except semantic.GateRefusedError as refused:
+            # Not an error. The gate doing its job, recorded and returned, so
+            # n8n carries on to notification rather than treating it as failure.
+            summary = {"applied": False, "gate_refused": str(refused)}
+
+        idempotency_store.complete(conn, claim.ledger_id, status_code=200, summary=summary)
+        conn.commit()
+
+    return JSONResponse(status_code=200, content=_body(request, summary))
 
 
 @router.post("/{run_id}/notify")

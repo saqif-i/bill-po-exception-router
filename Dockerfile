@@ -16,6 +16,8 @@ RUN pip install --require-hashes --no-deps -r requirements.txt
 
 COPY policy_service ./policy_service
 COPY migrations ./migrations
+COPY schemas ./schemas
+COPY prompts ./prompts
 
 # Run as a non-root user.
 RUN useradd --system --uid 10001 --no-create-home appuser
