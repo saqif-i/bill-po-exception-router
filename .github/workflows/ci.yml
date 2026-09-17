@@ -29,15 +29,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
       - name: scan n8n exports
-        run: |
-          if [ -d n8n/workflows ]; then
-            if grep -rEl '"(value|password|token|secret|apiKey)"[[:space:]]*:[[:space:]]*"[^"]{12,}"' n8n/workflows; then
-              echo "credential-shaped value in a committed workflow export" >&2
-              exit 1
-            fi
-          fi
-          echo "clean"
+        # The SAME check the pre-commit hook runs, not a regex. A regex over the
+        # raw JSON flags every long `value` string, which legitimately includes
+        # URLs, n8n expressions and resource-locator ids, while missing a
+        # credential stored under a key it does not know about.
+        #
+        # A CI job that disagrees with the local hook teaches you to ignore one
+        # of them, so they run the same script.
+        run: python scripts/check_workflow_exports.py
 
   lint:
     name: format and lint
