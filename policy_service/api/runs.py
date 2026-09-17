@@ -277,9 +277,48 @@ def notify(
     request: Request,
     principal: str = Depends(require_internal_bearer),
 ) -> JSONResponse:
-    """Part 8 implements this. Same reason as above."""
-    validate_key(request)
-    return JSONResponse(
-        status_code=501,
-        content=_body(request, {"error": "NOT_IMPLEMENTED", "implemented_in": "Part 8"}),
-    )
+    """Post the triage card, if the run is ready for one."""
+    from policy_service.domain import triage
+    from policy_service.integrations.slack_client import SlackClient
+
+    key = validate_key(request)
+    operation = "runs-notify"
+    correlation_id = uuid.UUID(request.state.correlation_id)
+    request_hash = canonical_hash(principal, operation, {"run_id": str(run_id)})
+    settings = get_settings()
+
+    if not settings.slack_bot_token:
+        raise ServiceError(code="SLACK_NOT_CONFIGURED", status_code=503)
+
+    with get_pool().connection() as conn:
+        claim = idempotency_store.claim(
+            conn,
+            scope=scope(principal, operation),
+            key=key,
+            request_hash=request_hash,
+            correlation_id=correlation_id,
+            owner_id=principal,
+        )
+        if claim.replayed:
+            return JSONResponse(
+                status_code=claim.result_status or 200,
+                content=_body(request, dict(claim.result_summary or {})),
+                headers={"Idempotency-Replayed": "true"},
+            )
+        conn.commit()
+
+        try:
+            summary = triage.notify(
+                conn,
+                run_id=run_id,
+                correlation_id=correlation_id,
+                client=SlackClient(bot_token=settings.slack_bot_token),
+            )
+        except triage.NotifyRefusedError as refused:
+            # The ordering gate doing its job, not a failure.
+            summary = {"posted": False, "notify_refused": str(refused)}
+
+        idempotency_store.complete(conn, claim.ledger_id, status_code=200, summary=summary)
+        conn.commit()
+
+    return JSONResponse(status_code=200, content=_body(request, summary))

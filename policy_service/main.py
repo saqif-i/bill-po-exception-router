@@ -12,7 +12,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, Response
 
-from policy_service.api import errors, health, runs
+from policy_service.api import errors, health, runs, slack
 from policy_service.api.limits import enforce_body_limit
 from policy_service.config import get_settings
 from policy_service.db import engine
@@ -33,6 +33,7 @@ app.add_exception_handler(errors.ServiceError, errors.service_error_handler)
 app.add_exception_handler(Exception, errors.unhandled_error_handler)
 app.include_router(health.router)
 app.include_router(runs.router)
+app.include_router(slack.router)
 
 
 app.middleware("http")(enforce_body_limit)

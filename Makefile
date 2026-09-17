@@ -44,8 +44,11 @@ lint:  ## check formatting and lint
 	ruff format --check .
 	ruff check .
 
-test:  ## run the non-live suite
-	pytest -m "not live"
+test:  ## run the non-live suite. TESTS=path/to/file.py to narrow it.
+	# Through make rather than bare pytest, because make loads .env above and an
+	# interactive shell does not. Without those variables every integration test
+	# skips itself, and "skipped" reads very like "passed".
+	pytest -m "not live" $(TESTS)
 
 up:  ## start the stack
 	docker compose up -d --build
@@ -56,8 +59,16 @@ down:  ## stop the stack, keep the data volume
 logs:  ## follow the service log
 	docker compose logs -f policy_service
 
-migrate:  ## apply migrations as bpr_owner
+migrate:  ## apply migrations to the app AND test databases, as bpr_owner
 	python -m policy_service.db.migrate
+	@# The integration tests run against BPR_TEST_DATABASE_URL, so it needs the
+	@# same schema. Migrating only the application database leaves the test one
+	@# behind, and that surfaces a stage later as a missing table rather than as
+	@# a missing migration.
+	@if [ -n "$$BPR_TEST_DATABASE_URL" ]; then \
+		printf 'and the test database: '; \
+		BPR_OWNER_DATABASE_URL="$$BPR_TEST_DATABASE_URL" python -m policy_service.db.migrate; \
+	fi
 
 check-db:  ## assert the n8n boundary holds against the running container
 	python scripts/check_db_boundaries.py
