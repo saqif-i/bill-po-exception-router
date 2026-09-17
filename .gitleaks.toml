@@ -36,6 +36,12 @@ description = "documented placeholders only"
 # .env.example would mean a real credential pasted into any of them is never
 # seen, and those are three of the likeliest places for one to land.
 regexes = [
+  # Synthetic Slack tokens in tests/unit/test_redaction.py. They exist so
+  # the redactor has something token-shaped to catch, which means the
+  # scanner will always find them. Listed by exact value, so no real token
+  # is exempt.
+  '''xoxb-1234567890-abcdefghijkl''',
+  '''xoxb-secret-value''',
   # The placeholder form used throughout .env.example.
   '''<<[A-Z0-9_]+>>''',
   # The synthetic Slack signing secret used in the unit tests, listed by its
