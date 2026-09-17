@@ -77,6 +77,14 @@ Xero bill -> deterministic reconciliation -> outcome
                     -> Slack card -> a person decides -> recorded
 ```
 
+![The polling workflow in n8n: schedule, poll, split, and one sub-workflow execution per bill](docs/images/workflow.png)
+
+n8n owns scheduling, branching and retries. It holds one bearer token and no
+database, Xero or Slack credential. Every decision in the diagram above happens
+in the service, not on the canvas: the canvas moves things, the service decides
+them. [`docs/platform-mapping.md`](docs/platform-mapping.md) argues where that
+line should sit on an enterprise integration platform.
+
 ![Nine bills, their outcomes, destinations and gate reasons](docs/images/routing.png)
 
 ## Running it
