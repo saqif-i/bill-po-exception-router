@@ -10,6 +10,11 @@ bill.**
 > **Status.** A portfolio build against a Xero demo company with synthetic data.
 > It performs no writes to Xero. See
 > [`docs/limitations-and-roadmap.md`](docs/limitations-and-roadmap.md).
+>
+> **How it was built.** Written with heavy AI assistance (Claude Code). The
+> architecture, the invocation gate, the invariant register and the scope
+> boundaries are mine, and [`DECISIONS.md`](DECISIONS.md) records the
+> alternatives I rejected and why.
 
 ## The problem
 

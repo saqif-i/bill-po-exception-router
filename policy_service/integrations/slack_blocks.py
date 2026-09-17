@@ -118,14 +118,28 @@ def build_card(
             }
         )
     else:
+        # Why there is no recommendation is not the same question as why the
+        # gate opened or closed, and the reviewer needs the first.
+        #
+        # When the gate CLOSED, the gate reason is the answer. When it opened
+        # and the attempt was then rejected, the gate reason says
+        # RESIDUAL_PAIR_TEXT_ONLY, which reads as "a recommendation was
+        # possible" beside a card showing none. The rejection reason on the run
+        # is the real answer, so it wins.
+        rejection = next(
+            (
+                reason
+                for reason in human_review_reasons
+                if reason.startswith("SEMANTIC_") and reason != "SEMANTIC_RECOMMENDATION_AVAILABLE"
+            ),
+            None,
+        )
+        why = rejection or semantic_gate_reason
         blocks.append(
             {
                 "type": "context",
                 "elements": [
-                    {
-                        "type": "mrkdwn",
-                        "text": f"No wording recommendation. Reason: `{semantic_gate_reason}`",
-                    }
+                    {"type": "mrkdwn", "text": f"No wording recommendation. Reason: `{why}`"}
                 ],
             }
         )

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import pathlib
+import re
 from dataclasses import dataclass
 from enum import StrEnum
 
@@ -29,26 +30,46 @@ MAX_EXPLANATION = 400
 MAX_EVIDENCE_SPANS = 4
 MIN_EVIDENCE_SPANS = 1
 
-# The explanation is for a reviewer deciding about wording. A sentence about
-# price or approval would be the model reaching past its one question.
+# The explanation is for a reviewer deciding about wording. What must not appear
+# is the model reaching past its one question: telling anyone what to DO.
+#
+# An earlier version also blocked the nouns `price`, `amount`, `total`,
+# `quantity` and `tax`. That rejected correct answers: comparing "Water, bottled,
+# case of 24" with "24x 500ml bottled water" is a question ABOUT a quantity, and
+# any useful explanation says so. A validator that rejects the right answer
+# teaches you to weaken the validator.
+#
+# The structural containment is what actually prevents harm: the response has no
+# field for an outcome, a status or an action, so the model cannot affect a
+# decision however it words itself. This list is the narrower backstop it should
+# always have been, and it targets ACTION and AUTHORITY only.
 FORBIDDEN_IN_EXPLANATION = (
-    "price",
-    "prices",
-    "amount",
-    "amounts",
-    "total",
-    "totals",
-    "quantity",
-    "quantities",
-    "tax",
     "approve",
     "approved",
     "approval",
+    "approving",
     "reject",
     "rejected",
-    "pay",
-    "payment",
-    "should be",
+    "rejection",
+    "authorise",
+    "authorize",
+    "authorised",
+    "authorized",
+    "should be paid",
+    "should not be paid",
+    "do not pay",
+    "withhold payment",
+    "recommend paying",
+    "recommend rejecting",
+    "safe to pay",
+)
+
+# Whole words, not substrings. `tax` inside `taxonomy` and `pay` inside `paper`
+# are not the model overstepping, and matching them was a second way to reject a
+# correct answer.
+_FORBIDDEN_PATTERN = re.compile(
+    r"\b(" + "|".join(re.escape(word) for word in FORBIDDEN_IN_EXPLANATION) + r")\b",
+    re.IGNORECASE,
 )
 
 
@@ -150,9 +171,12 @@ def validate(
         return Rejection(RejectionReason.MALFORMED, "explanation missing")
     if len(explanation) > MAX_EXPLANATION:
         return Rejection(RejectionReason.MALFORMED, "explanation too long")
-    lowered = explanation.lower()
-    if any(word in lowered for word in FORBIDDEN_IN_EXPLANATION):
-        return Rejection(RejectionReason.MALFORMED, "explanation mentions a forbidden topic")
+    overstep = _FORBIDDEN_PATTERN.search(explanation)
+    if overstep:
+        return Rejection(
+            RejectionReason.MALFORMED,
+            f"explanation tells the reviewer what to do: {overstep.group(0)!r}",
+        )
 
     evidence = raw["evidence"]
     if not isinstance(evidence, list):
