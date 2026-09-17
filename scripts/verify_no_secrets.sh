@@ -52,6 +52,10 @@ echo "scanning history..."
 gitleaks detect --config .gitleaks.toml --no-banner --redact --source .
 
 if [ -d n8n/workflows ]; then
+    # n8n writes instance-specific fields into every export. Strip them first,
+    # so a fresh download does not fail the scan for something that is noise
+    # rather than a secret.
+    python3 scripts/strip_workflow_meta.py
     echo "checking workflow exports..."
     python3 scripts/check_workflow_exports.py
 fi

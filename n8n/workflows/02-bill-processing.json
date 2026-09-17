@@ -3,12 +3,10 @@
   "nodes": [
     {
       "parameters": {
-        "inputSource": "workflowInputs",
         "workflowInputs": {
           "values": [
             {
-              "name": "run_id",
-              "type": "string"
+              "name": "run_id"
             }
           ]
         }
@@ -16,15 +14,16 @@
       "type": "n8n-nodes-base.executeWorkflowTrigger",
       "typeVersion": 1.2,
       "position": [
-        0,
-        0
+        -944,
+        208
       ],
-      "name": "Execution Input"
+      "name": "Execution Input",
+      "id": "601628c2-2643-4e14-9dba-16b296ef77d1"
     },
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ $env.POLICY_SERVICE_URL }}/runs/{{ $json.run_id }}/reconcile",
+        "url": "=http://policy_service:8000/runs/{{ $json.run_id }}/reconcile",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "sendHeaders": true,
@@ -37,26 +36,27 @@
           ]
         },
         "options": {
-          "timeout": 60000,
           "response": {
             "response": {
               "fullResponse": true,
               "neverError": true
             }
-          }
+          },
+          "timeout": 60000
         }
       },
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.5,
       "position": [
-        224,
-        0
+        -720,
+        208
       ],
       "name": "Reconcile",
+      "id": "3654c46c-34ef-410f-b204-6d5f0b142305",
       "credentials": {
         "httpHeaderAuth": {
-          "id": "REPLACE_AFTER_IMPORT",
-          "name": "Policy service bearer"
+          "id": "dFDsMT7F1BU9tCTZ",
+          "name": "policy service bearer"
         }
       }
     },
@@ -87,10 +87,11 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        448,
-        0
+        -496,
+        208
       ],
-      "name": "Needs Review"
+      "name": "Needs Review",
+      "id": "9cc00ed5-9f8e-4967-92e6-91677dd8efc2"
     },
     {
       "parameters": {
@@ -119,15 +120,16 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        672,
-        -112
+        -272,
+        96
       ],
-      "name": "Semantic Permitted"
+      "name": "Semantic Permitted",
+      "id": "db6be622-0a22-4fe0-978d-93d332898259"
     },
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ $env.POLICY_SERVICE_URL }}/runs/{{ $json.body.run_id }}/semantic-review",
+        "url": "=http://policy_service:8000/runs/{{ $json.body.run_id }}/semantic-review",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "sendHeaders": true,
@@ -140,33 +142,34 @@
           ]
         },
         "options": {
-          "timeout": 60000,
           "response": {
             "response": {
               "fullResponse": true,
               "neverError": true
             }
-          }
+          },
+          "timeout": 60000
         }
       },
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.5,
       "position": [
-        896,
-        -208
+        -48,
+        0
       ],
       "name": "Semantic Review",
+      "id": "8c5ac7e3-e9fd-4ce8-9149-3e1fe01cff87",
       "credentials": {
         "httpHeaderAuth": {
-          "id": "REPLACE_AFTER_IMPORT",
-          "name": "Policy service bearer"
+          "id": "dFDsMT7F1BU9tCTZ",
+          "name": "policy service bearer"
         }
       }
     },
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ $env.POLICY_SERVICE_URL }}/runs/{{ $json.body.run_id }}/notify",
+        "url": "=http://policy_service:8000/runs/{{ $('Reconcile').item.json.body.run_id }}/notify",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "sendHeaders": true,
@@ -179,26 +182,27 @@
           ]
         },
         "options": {
-          "timeout": 60000,
           "response": {
             "response": {
               "fullResponse": true,
               "neverError": true
             }
-          }
+          },
+          "timeout": 60000
         }
       },
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.5,
       "position": [
-        1120,
-        -112
+        176,
+        96
       ],
       "name": "Notify",
+      "id": "d082a40b-b107-42d7-bf7c-34ff0bc0cfcc",
       "credentials": {
         "httpHeaderAuth": {
-          "id": "REPLACE_AFTER_IMPORT",
-          "name": "Policy service bearer"
+          "id": "dFDsMT7F1BU9tCTZ",
+          "name": "policy service bearer"
         }
       }
     },
@@ -207,12 +211,57 @@
       "type": "n8n-nodes-base.noOp",
       "typeVersion": 1,
       "position": [
-        672,
-        112
+        -272,
+        320
       ],
-      "name": "Closed Without Review"
+      "name": "Closed Without Review",
+      "id": "08a7f102-bef3-4bb3-9e5f-6e82bca42757"
     }
   ],
+  "pinData": {
+    "Execution Input": [
+      {
+        "json": {
+          "run_id": "5f955204-e0b3-465c-94a0-a620f38612b0"
+        },
+        "pairedItem": {
+          "item": 0
+        }
+      }
+    ],
+    "Reconcile": [
+      {
+        "json": {
+          "body": {
+            "run_id": "5f955204-e0b3-465c-94a0-a620f38612b0",
+            "result_id": "45c93af6-3503-4a0b-a22d-1f6096890db1",
+            "outcome": "REVIEW_REQUIRED",
+            "exception_codes": [
+              "UNPAIRED_LINE"
+            ],
+            "triage_destination": "AP_REVIEW",
+            "semantic_permitted": true,
+            "semantic_gate_reason": "RESIDUAL_PAIR_TEXT_ONLY",
+            "semantic_stage_status": "PENDING",
+            "correlation_id": "d8574a11-2f7e-421e-be17-7ec1663b6505"
+          },
+          "headers": {
+            "date": "Thu, 17 Sep 2026 03:42:06 GMT",
+            "server": "uvicorn",
+            "content-length": "362",
+            "content-type": "application/json",
+            "x-correlation-id": "d8574a11-2f7e-421e-be17-7ec1663b6505",
+            "connection": "close"
+          },
+          "statusCode": 200,
+          "statusMessage": "OK"
+        },
+        "pairedItem": {
+          "item": 0
+        }
+      }
+    ]
+  },
   "connections": {
     "Execution Input": {
       "main": [
@@ -285,7 +334,10 @@
     }
   },
   "settings": {
-    "executionOrder": "v1"
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": true
   },
-  "pinData": {}
+  "nodeGroups": [],
+  "tags": []
 }

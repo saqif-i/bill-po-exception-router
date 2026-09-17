@@ -9,12 +9,11 @@
         0,
         0
       ],
-      "name": "Error Trigger"
+      "name": "Error Trigger",
+      "id": "54c0e4be-b32f-43dc-9074-e45c444c6b1e"
     },
     {
       "parameters": {
-        "mode": "manual",
-        "includeOtherFields": false,
         "assignments": {
           "assignments": [
             {
@@ -57,7 +56,8 @@
         224,
         0
       ],
-      "name": "Shape Failure"
+      "name": "Shape Failure",
+      "id": "75ac60a7-5ec3-4223-9265-ad8904b69d77"
     },
     {
       "parameters": {},
@@ -67,9 +67,11 @@
         448,
         0
       ],
-      "name": "Record Failure"
+      "name": "Record Failure",
+      "id": "d64ef06a-f7ae-4090-b27f-78c4101a4591"
     }
   ],
+  "pinData": {},
   "connections": {
     "Error Trigger": {
       "main": [
@@ -95,7 +97,10 @@
     }
   },
   "settings": {
-    "executionOrder": "v1"
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": true
   },
-  "pinData": {}
+  "nodeGroups": [],
+  "tags": []
 }
