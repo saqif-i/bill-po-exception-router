@@ -88,6 +88,7 @@ jobs:
           POSTGRES_USER: ci
           APP_DB_NAME: bpr
           N8N_DB_NAME: n8n
+          TEST_DB_NAME: bpr_test
           BPR_OWNER_USER: bpr_owner
           BPR_OWNER_PASSWORD: ci-owner-pw
           N8N_DB_USER: n8n_app
@@ -98,14 +99,20 @@ jobs:
         # only works in the container is a bootstrap nobody has tested.
         run: ./docker/postgres/init/001-bootstrap.sh
 
-      - name: migrate
+      - name: migrate both databases
         env:
           # Migration 001 creates the runtime login roles. Without these it
           # refuses rather than creating roles that cannot authenticate.
           BPR_APP_PASSWORD: ci-app-pw
           BPR_RETENTION_PASSWORD: ci-retention-pw
-          BPR_OWNER_DATABASE_URL: postgresql://bpr_owner:ci-owner-pw@localhost:5432/bpr
-        run: python -m policy_service.db.migrate
+        # The test database needs the same schema: the integration tests run
+        # against it, and an unmigrated one makes every one of them fail on a
+        # missing table.
+        run: |
+          BPR_OWNER_DATABASE_URL=postgresql://bpr_owner:ci-owner-pw@localhost:5432/bpr \
+            python -m policy_service.db.migrate
+          BPR_OWNER_DATABASE_URL=postgresql://bpr_owner:ci-owner-pw@localhost:5432/bpr_test \
+            python -m policy_service.db.migrate
 
       - name: prove the n8n boundary holds
         env:
@@ -122,6 +129,7 @@ jobs:
           # integration tests skip silently and CI reports green having tested
           # nothing.
           BPR_OWNER_DATABASE_URL: postgresql://bpr_owner:ci-owner-pw@localhost:5432/bpr
+          BPR_TEST_DATABASE_URL: postgresql://bpr_owner:ci-owner-pw@localhost:5432/bpr_test
           BPR_DATABASE_URL: postgresql://bpr_app:ci-app-pw@localhost:5432/bpr
           INTERNAL_BEARER_TOKEN: ci-token-not-a-real-secret-0000000
         run: pytest -m "not live"
@@ -129,6 +137,7 @@ jobs:
       - name: assert the integration tests actually ran
         env:
           BPR_OWNER_DATABASE_URL: postgresql://bpr_owner:ci-owner-pw@localhost:5432/bpr
+          BPR_TEST_DATABASE_URL: postgresql://bpr_owner:ci-owner-pw@localhost:5432/bpr_test
           BPR_DATABASE_URL: postgresql://bpr_app:ci-app-pw@localhost:5432/bpr
           INTERNAL_BEARER_TOKEN: ci-token-not-a-real-secret-0000000
         # A skipped integration suite looks identical to a passing one.
