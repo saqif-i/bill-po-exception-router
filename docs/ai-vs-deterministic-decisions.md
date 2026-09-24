@@ -46,6 +46,7 @@ line.
 | Is the account code present, correctly formatted, in the recorded chart, and equal on both sides? | Deterministic | Set membership and exact comparison after trim-only canonicalisation. |
 | Which lines pair with which? | Deterministic | Three pairing tiers, none of which uses a model. |
 | Which team owns this exception? | Deterministic | A routing table keyed on the exception reason. |
+| May the model be consulted at all? | Deterministic | Twelve conditions (section 3). |
 | **Do these two line descriptions refer to the same item?** | **Model, advisory only** | **The only decision requiring meaning from free text.** |
 | What happens to the bill? | Human | A financial control. Not delegated to either layer. |
 

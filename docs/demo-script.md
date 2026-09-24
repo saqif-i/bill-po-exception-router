@@ -10,7 +10,7 @@ demo company resets after 28 days.
 |---|---|---|
 | 0:00 | Two bills side by side in Xero, `INV-1008` and `INV-1009` | "A supplier has billed for bottled water. The wording on both bills differs from the purchase order." |
 | 0:15 | n8n, press Execute Workflow | "A schedule polls for draft bills. Nothing here is manual." |
-| 0:30 | The `runs` query output | "Ten bills. One matched and closed silently. The rest name a specific problem and a team that owns it." |
+| 0:30 | The `runs` query output | "Nine bills. One matched and closed silently. The rest name a specific problem and a team that owns it." |
 | 0:50 | `#ap-procurement`, the quantity variance card | "This one is arithmetic. Eleven billed against ten ordered. No AI was involved, and none was needed." |
 | 1:10 | `#ap-review`, the `INV-1008` card | "This one is wording. Every number agrees, so the system asked a model whether the two descriptions mean the same thing. It answered, with the supplier's own words as evidence." |
 | 1:30 | The line on the card saying it is context, not a decision | "It is context. It changes no outcome, it is not a routing input, and a person still decides." |

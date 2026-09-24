@@ -59,7 +59,7 @@ The model was consulted once and refused once, and the card says which happened
 either way. The recommendation is labelled as context: it changed no outcome and
 was not a routing input.
 
-Note the second card carries six exception codes from one root cause. The unit
+Note the second card carries six exception codes, five of them from one root cause. The unit
 price differs, so the line amount differs, so the line tax differs, so both
 totals differ. It routes to procurement rather than finance because routing
 follows the **cause**, not the symptom: header aggregates like `TOTAL_VARIANCE`
