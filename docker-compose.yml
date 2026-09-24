@@ -47,8 +47,8 @@ services:
       # is not named below never reaches the container, and the service reports
       # the provider as unconfigured rather than misbehaving.
       #
-      # Optional by design (`:-`), so the stack starts before Parts 4, 7 and 8
-      # have supplied them and the tests keep running without any credential.
+      # Optional by design (`:-`), so the stack starts before any provider is
+      # configured and the tests keep running without any credential.
       XERO_CLIENT_ID: ${XERO_CLIENT_ID:-}
       XERO_CLIENT_SECRET: ${XERO_CLIENT_SECRET:-}
       XERO_SCOPES: ${XERO_SCOPES:-accounting.transactions.read accounting.settings.read accounting.contacts.read}

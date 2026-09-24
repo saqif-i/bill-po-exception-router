@@ -1,8 +1,9 @@
 """Configuration, validated at startup.
 
 Startup runs before the first request is accepted and fails the process on any
-invalid setting. An unknown write mode is a hard failure
-rather than a warning, because failing closed is the point (I08).
+invalid setting. An unknown write mode, or semantic review enabled without an
+API key, is a hard failure rather than a warning, because failing closed is the
+point (I08).
 """
 
 from __future__ import annotations
@@ -10,7 +11,7 @@ from __future__ import annotations
 from enum import StrEnum
 from functools import lru_cache
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -21,7 +22,9 @@ class WriteMode(StrEnum):
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    # An empty variable counts as unset. Compose passes optional settings as
+    # `${VAR:-}`, which would otherwise override a default with an empty string.
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore", env_ignore_empty=True)
 
     # Runtime database role. Never the owner, never the bootstrap superuser.
     bpr_database_url: str = Field(alias="BPR_DATABASE_URL")
@@ -86,6 +89,14 @@ class Settings(BaseSettings):
                 "The owner and bootstrap credentials are never given to the service."
             )
         return value
+
+    @model_validator(mode="after")
+    def _semantic_review_needs_a_key(self) -> Settings:
+        """Fails closed like the write mode: enabling review without a key would
+        send every call to fail as SEMANTIC_PROVIDER_UNAVAILABLE."""
+        if self.semantic_review_enabled and not self.anthropic_api_key:
+            raise ValueError("SEMANTIC_REVIEW_ENABLED=true requires ANTHROPIC_API_KEY to be set.")
+        return self
 
 
 @lru_cache

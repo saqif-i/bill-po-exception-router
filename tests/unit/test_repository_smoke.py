@@ -17,8 +17,8 @@ def test_migrations_are_forward_numbered_and_may_have_gaps() -> None:
     names = sorted(p.name for p in (REPO / "migrations").glob("*.sql"))
     assert names, "no migrations found"
     assert names[0] == "001_core_schema.sql"
-    # v1 deliberately skips 002 (deferred; BUILD-SCOPE-v1.md section 4). The runner must not
-    # assert a contiguous sequence. See BUILD-SCOPE-v1.md section 4.
+    # v1 deliberately skips 002. The runner must not assert a contiguous
+    # sequence. See BUILD-SCOPE-v1.md section 4.
     assert all(name[:3].isdigit() for name in names)
 
 
@@ -37,6 +37,40 @@ def test_write_mode_unset_resolves_to_disabled(monkeypatch: pytest.MonkeyPatch) 
 
     monkeypatch.delenv("XERO_WRITE_MODE", raising=False)
     assert Settings().xero_write_mode == "disabled"
+
+
+def test_empty_optional_settings_fall_back_to_their_defaults(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Compose passes `${VAR:-}`. An empty value must not override a default."""
+    from policy_service.config import Settings
+
+    monkeypatch.setenv("SEMANTIC_MODEL_ID", "")
+    monkeypatch.setenv("SEMANTIC_REVIEW_ENABLED", "")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "")
+    settings = Settings(_env_file=None)
+    assert settings.semantic_model_id == "claude-haiku-4-5-20251001"
+    assert settings.semantic_review_enabled is False
+    assert settings.anthropic_api_key is None
+
+
+def test_semantic_review_enabled_without_a_key_refuses_to_start(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from policy_service.config import Settings
+
+    monkeypatch.setenv("SEMANTIC_REVIEW_ENABLED", "true")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    with pytest.raises(ValueError, match="requires ANTHROPIC_API_KEY"):
+        Settings(_env_file=None)
+
+
+def test_semantic_review_enabled_with_a_key_starts(monkeypatch: pytest.MonkeyPatch) -> None:
+    from policy_service.config import Settings
+
+    monkeypatch.setenv("SEMANTIC_REVIEW_ENABLED", "true")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key-not-real")
+    assert Settings(_env_file=None).semantic_review_enabled is True
 
 
 def test_service_refuses_the_owner_credential(monkeypatch: pytest.MonkeyPatch) -> None:
