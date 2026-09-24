@@ -44,7 +44,7 @@ QUERIES = {
 }
 
 # The failed-runs view, as a query rather than a migration. v1 creates four
-# migrations and the next numbers belong to deferred volumes; adding one here
+# migrations and the next numbers belong to deferred components; adding one here
 # would break the promise that numbering is stable.
 FAILED_RUNS = """
     SELECT r.xero_invoice_number, r.workflow_status, r.reconciliation_outcome,

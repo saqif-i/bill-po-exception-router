@@ -76,5 +76,5 @@ check-db:  ## assert the n8n boundary holds against the running container
 verify-secrets:  ## local equivalent of the CI secret scan
 	./scripts/verify_no_secrets.sh
 
-gate: lint test check-db verify-secrets  ## the completion gate for this volume
+gate: lint test check-db verify-secrets  ## lint, tests, database boundary and secret scan
 	@echo "gate: passed"

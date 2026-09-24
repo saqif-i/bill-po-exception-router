@@ -50,7 +50,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      # Pinned, because a guide that pins its runtime images and then
+      # Pinned, because a project that pins its runtime images and then
       # floats its linter is inconsistent with itself.
       - run: pip install -r requirements-dev.txt
       - run: ruff format --check .

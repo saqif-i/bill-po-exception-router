@@ -11,9 +11,9 @@ as one, chosen to be plausible rather than measured.
 It exists because the rest of this project is engineering documentation, and a
 system that automates a business process should be able to state what that
 process is, who suffers from it, and what "better" means in terms the business
-would recognise. Where this brief and the technical volumes disagree about what
-the system should do, this brief describes the intent and the volumes describe
-the mechanism.
+would recognise. Where this brief and the technical documents disagree about
+what the system should do, this brief describes the intent and the technical
+documents describe the mechanism.
 
 This satisfies I23: no claim is made about any organisation's internal
 architecture, systems, processes or roadmap.
@@ -217,7 +217,7 @@ Recorded so that the absences read as decisions. Full reasoning in
 | BR-3 | `policy_service/domain/routing.py` |
 | BR-4 | The invocation gate in `reconcile()`; the bounded contract in `policy_service/integrations/claude_contract.py` and `schemas/` |
 | BR-5 | Runs and decisions in `migrations/001_core_schema.sql` and `005_triage_and_slack.sql`; Slack decision capture in `policy_service/api/slack.py` and `policy_service/domain/triage.py` |
-| BR-6 | `n8n/workflows/03-error-handler.json`, the `stuck_runs` count in `scripts/capture_metrics.py`, and `docs/runbook.md` |
+| BR-6 | `n8n/workflows/03-error-handler.json`, the failed-runs query and stuck-run warning in `scripts/capture_metrics.py`, and `docs/runbook.md` |
 | Section 6 boundary | Invariants I01, I02, I03, I05, I06, I26, I27. See `docs/invariant-register-v1.md`. |
 
 ---
