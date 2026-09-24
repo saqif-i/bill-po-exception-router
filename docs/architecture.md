@@ -47,7 +47,7 @@ n8n schedule, every few minutes
 
 **The engine is pure.** `reconcile()` takes a bill, a purchase order and a chart
 of accounts, and returns a decision. No database, no network, no clock. That is
-why fifty-five tests run in under a second and why the logic can be reviewed as
+why the engine tests run in under a second and why the logic can be reviewed as
 a unit.
 
 **Several invariants live in the schema.** A run cannot be observable with an

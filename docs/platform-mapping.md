@@ -44,7 +44,7 @@ features rather than something to build.
 
 ## What would stay as code, and why
 
-**The reconciliation engine.** All of `policy_service/domain/`. Fifty-five
+**The reconciliation engine.** All of `policy_service/domain/`. Engine
 tests that run in under a second with no network, a fixed tolerance set, an
 exhaustive code vocabulary, and pairing logic with a precedence that matters.
 Expressing that as connector steps would make it slower to test, harder to
@@ -78,7 +78,7 @@ and dependencies by hash. A hosted platform upgrades its own runtime, and a
 connector version can change what your integration does without a commit in your
 repository. That is a real trade, and usually worth it.
 
-**Offline testing.** The fifty-five engine tests run with no network because
+**Offline testing.** The engine tests run with no network because
 the engine is a pure function. Logic living in a canvas generally needs the
 platform to test, which lengthens the loop from one second to minutes.
 
