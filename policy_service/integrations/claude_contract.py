@@ -1,6 +1,6 @@
 """What the model may return, and what is done with it.
 
-Volume 08 sections 9.8, 9.10 and 9.12. Pure functions, so every rejection path
+Invariant I06. Pure functions, so every rejection path
 is tested without an API key.
 
 The contract has FOUR fields. Note what is absent: there is no field for an

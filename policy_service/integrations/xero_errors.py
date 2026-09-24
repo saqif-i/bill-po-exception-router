@@ -1,4 +1,4 @@
-"""Error classification (Volume 04 section 9.5).
+"""Error classification.
 
 A pure function from status and body to a class. Pure so it can be unit-tested
 against fixtures without a network, and so the retry decision is never an

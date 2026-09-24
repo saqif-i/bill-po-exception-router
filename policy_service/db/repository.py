@@ -1,6 +1,6 @@
 """Persistence for a reconciliation decision.
 
-Volume 06 section 9.13. The reconciliation transaction is atomic across its
+Invariant I28. The reconciliation transaction is atomic across its
 COMPLETE decision record: the account-reference snapshot with its hash and
 version, reconciliation_results, every exception_items row,
 runs.reconciliation_outcome, the correct next workflow_status, the initialised
@@ -29,7 +29,7 @@ from policy_service.domain.enums import (
 from policy_service.domain.reconciliation import ReconciliationResult
 from policy_service.integrations.xero_parsing import dumps
 
-# The workflow status a run moves to, by outcome (section 9.13).
+# The workflow status a run moves to, by outcome (docs/architecture.md, States).
 _NEXT_STATUS = {
     Outcome.MATCHED: "COMPLETED",
     Outcome.UNPROCESSABLE: "COMPLETED",

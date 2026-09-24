@@ -55,7 +55,7 @@ and locals are where credentials live.
 
 ## Provider questions, answered before the flag was turned on
 
-Volume 08 requires these to be recorded before `SEMANTIC_REVIEW_ENABLED` may be
+These must be recorded before `SEMANTIC_REVIEW_ENABLED` may be
 set true. Fill them in from the provider's current documentation and your own
 console, and **date them**.
 

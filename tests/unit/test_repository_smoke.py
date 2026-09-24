@@ -1,7 +1,7 @@
 """The repository is wired up and the invariants that are structural hold.
 
 pytest exits non-zero when it collects nothing, so a green CI run needs real
-assertions rather than an empty collection (Volume 01 section 9.8).
+assertions rather than an empty collection.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ def test_migrations_are_forward_numbered_and_may_have_gaps() -> None:
     names = sorted(p.name for p in (REPO / "migrations").glob("*.sql"))
     assert names, "no migrations found"
     assert names[0] == "001_core_schema.sql"
-    # v1 deliberately skips 002 (deferred Volume 05). The runner must not
+    # v1 deliberately skips 002 (deferred; BUILD-SCOPE-v1.md section 4). The runner must not
     # assert a contiguous sequence. See BUILD-SCOPE-v1.md section 4.
     assert all(name[:3].isdigit() for name in names)
 
@@ -60,7 +60,7 @@ def test_authentication_path_uses_no_equality_operator() -> None:
 def test_no_write_method_reaches_the_transport_allow_list() -> None:
     """ADR-006: v1 builds no Xero write path at all."""
     integrations = REPO / "policy_service" / "integrations"
-    assert not (integrations / "xero_transport.py").exists() or True  # added in V04
+    assert not (integrations / "xero_transport.py").exists() or True  # see BUILD-SCOPE-v1.md s4
     assert not any("History" in p.read_text() for p in integrations.glob("*.py")), (
         "no history-note write may appear in v1"
     )

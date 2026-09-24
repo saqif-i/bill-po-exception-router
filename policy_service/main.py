@@ -1,7 +1,7 @@
 """Application entry point.
 
 Startup validates configuration before the first request is accepted and fails
-the process on any invalid setting (Volume 02 section 9.2).
+the process on any invalid setting (I08).
 """
 
 from __future__ import annotations

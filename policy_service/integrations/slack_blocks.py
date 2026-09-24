@@ -1,4 +1,4 @@
-"""The triage card (Volume 09 sections 9.4 and 9.6).
+"""The triage card.
 
 Invariant I03: Slack controls express operational triage decisions, not
 financial approval. **No control is named Approve or Reject**, because none of

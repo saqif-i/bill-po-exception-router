@@ -1,9 +1,9 @@
 """Shared test configuration.
 
-This file exists from Part 2, before any application code does, so it must not
-import application modules at collection time. An autouse fixture that imported
-`policy_service.config` would make **every** test in the repository error until
-Part 3 supplied that module, including tests that never touch settings.
+It must not import application modules at collection time. An autouse fixture
+that imported `policy_service.config` would make **every** test in the
+repository error whenever that module failed to import, including tests that
+never touch settings.
 """
 
 from __future__ import annotations
@@ -39,8 +39,8 @@ def _env(monkeypatch: pytest.MonkeyPatch):
     database URL with a dummy password, and the integration tests would then
     fail to connect while looking like a configuration problem.
 
-    The settings cache is cleared only if the module exists. Importing it
-    unconditionally would couple every test in the repository to a Part 3 file.
+    The settings cache is cleared only if the module imports. Importing it
+    unconditionally would couple every test in the repository to that module.
     """
     for key, value in TEST_ENV.items():
         if not os.environ.get(key):
@@ -55,7 +55,7 @@ def _clear_settings_cache() -> None:
     try:
         from policy_service.config import get_settings
     except ImportError:
-        return  # Part 2: the settings module does not exist yet
+        return  # the settings module is unavailable
     get_settings.cache_clear()
 
 

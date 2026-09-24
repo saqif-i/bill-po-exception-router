@@ -1,4 +1,4 @@
-"""The deterministic engine, Volume 06.
+"""The deterministic engine, invariant I04.
 
 The nine scenarios at the bottom are the demonstration fixture set. They are
 the cases the Slack cards show, so they are tested as a unit here before any

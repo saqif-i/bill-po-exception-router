@@ -1,4 +1,4 @@
-"""The idempotency contract, Volume 02 section 9.9.
+"""The idempotency contract, invariants I10 and I36.
 
 One test per row of the behaviour table.
 """

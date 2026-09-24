@@ -1,6 +1,6 @@
 """Notification and the human decision.
 
-Volume 09 sections 9.5, 9.7 and 9.9.
+Invariants I03 and I31.
 """
 
 from __future__ import annotations

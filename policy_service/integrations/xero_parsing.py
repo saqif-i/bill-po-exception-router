@@ -1,4 +1,4 @@
-"""Decimal-safe JSON parsing (Volume 04 section 9.8).
+"""Decimal-safe JSON parsing.
 
 Monetary and quantity values must never pass through a binary floating-point
 representation **at any point, including during JSON deserialisation**.
@@ -50,8 +50,8 @@ def account_codes_from_accounts_response(payload: dict) -> frozenset[str]:
     """The bounded account-code projection used as the reference set.
 
     AccountCode is read as a STRING with leading zeroes intact. A JSON number
-    is refused rather than coerced: Volume 04 guarantees a code arrives as a
-    string, and Volume 06 owns what is done with it.
+    is refused rather than coerced: this layer guarantees a code arrives as a
+    string, and `policy_service/domain/reconciliation.py` decides what is done with it.
     """
     codes: set[str] = set()
     for account in payload.get("Accounts", []):

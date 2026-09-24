@@ -1,7 +1,7 @@
 """Configuration, validated at startup.
 
 Startup runs before the first request is accepted and fails the process on any
-invalid setting (Volume 02 section 9.2). An unknown write mode is a hard failure
+invalid setting. An unknown write mode is a hard failure
 rather than a warning, because failing closed is the point (I08).
 """
 
@@ -46,7 +46,7 @@ class Settings(BaseSettings):
     xero_read_timeout_seconds: float = Field(default=30.0, alias="XERO_READ_TIMEOUT_SECONDS")
     xero_max_attempts: int = Field(default=4, alias="XERO_MAX_ATTEMPTS")
 
-    # Default off (Volume 08 section 9.2). Part 7 turns it on, and only after
+    # Default off. Turn it on only after
     # the provider questions in docs/security.md have been answered.
     semantic_review_enabled: bool = Field(default=False, alias="SEMANTIC_REVIEW_ENABLED")
     anthropic_api_key: str | None = Field(default=None, alias="ANTHROPIC_API_KEY")
@@ -55,12 +55,12 @@ class Settings(BaseSettings):
     # exactly this task: one question about two short strings, with verbatim
     # evidence attached. It is also the only current id carrying a DATE, so
     # pinning it actually pins it. Move up to claude-sonnet-5 only if your own
-    # evaluation gives you a reason (Part 7 Stage 7.7).
+    # evaluation gives you a reason (evaluations/run_eval.py).
     semantic_model_id: str = Field(default="claude-haiku-4-5-20251001", alias="SEMANTIC_MODEL_ID")
     semantic_min_confidence: float = Field(default=0.6, alias="SEMANTIC_MIN_CONFIDENCE")
     semantic_timeout_seconds: float = Field(default=30.0, alias="SEMANTIC_TIMEOUT_SECONDS")
 
-    # Slack. Optional, so the service starts before Part 8 is built.
+    # Slack. Optional, so the service starts without a Slack app configured.
     slack_bot_token: str | None = Field(default=None, alias="SLACK_BOT_TOKEN")
     slack_signing_secret: str | None = Field(default=None, alias="SLACK_SIGNING_SECRET")
 

@@ -1,4 +1,4 @@
-"""The deterministic reconciliation engine (Volume 06).
+"""The deterministic reconciliation engine (I04).
 
 Takes a bill, a purchase order and a chart-of-accounts set. Returns a complete
 decision. No I/O, no database, no clock, no configuration lookup: everything it
@@ -18,7 +18,7 @@ Order of work, and it matters:
    10. outcome, routing, review reasons, stage initialisation
 
 Step 8 is the one people leave out, and leaving it out is what makes an AI
-recommendation dangerous. See section 9.9 and invariant I26.
+recommendation dangerous. See invariants I26 and I27.
 """
 
 from __future__ import annotations
@@ -66,7 +66,7 @@ class ExceptionItem:
 
 @dataclass
 class AccountCodeEvidence:
-    """Explicit fields rather than a vague validity flag (section 9.5)."""
+    """Explicit fields rather than a vague validity flag."""
 
     bill_account_code_raw: str | None = None
     po_account_code_raw: str | None = None
@@ -202,7 +202,7 @@ def pair_lines(
 
 
 # --------------------------------------------------------------------------
-# account codes (section 9.5)
+# account codes
 # --------------------------------------------------------------------------
 _ACCOUNT_CODES = {
     "paired": {

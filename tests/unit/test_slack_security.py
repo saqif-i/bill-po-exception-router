@@ -1,6 +1,6 @@
 """Slack request signature verification.
 
-Volume 09 section 9.2. Pure, so no Slack workspace is needed.
+Pure, so no Slack workspace is needed.
 
 The card wording is tested separately in test_slack_card.py, because it belongs
 to a different module and arrives a stage later.

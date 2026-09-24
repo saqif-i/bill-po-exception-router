@@ -59,7 +59,7 @@ def _line(desc, **over):
 
 
 def _seed_wording_run(conn, bill_over=None):
-    """A run sitting at REVIEW_READY with the gate open, as Part 6 leaves it."""
+    """A run sitting at REVIEW_READY with the gate open, as reconciliation leaves it."""
     invoice_id, fixture_id, run_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
     number = f"INV-{invoice_id.hex[:6]}"
     po_number = f"PO-{invoice_id.hex[:8]}"

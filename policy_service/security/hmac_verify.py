@@ -1,4 +1,4 @@
-"""Slack request signature verification (Volume 09 section 9.2).
+"""Slack request signature verification.
 
 Two separate protections, and they are not the same thing.
 

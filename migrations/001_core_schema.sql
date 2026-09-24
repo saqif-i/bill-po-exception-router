@@ -1,7 +1,7 @@
 -- 001_core_schema.sql
--- Owner: Volume 03. Applied as bpr_owner. Forward-only.
+-- Core schema. Applied as bpr_owner. Forward-only.
 --
--- v1 scope note: the retention purge function (Volume 03 section 9.10) is NOT
+-- v1 scope note: a retention purge function is NOT
 -- created here. v1 runs no retention process, so I20 is enforced structurally
 -- by the table separation below and by bpr_app holding no DELETE on any
 -- purgeable payload table. See docs/invariant-register-v1.md.

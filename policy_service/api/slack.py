@@ -1,6 +1,6 @@
 """Inbound Slack interactions.
 
-Volume 09 sections 9.2, 9.3 and 9.8.
+Invariants I03 and I09.
 
 This is the ONLY endpoint reachable from the public internet, so it does not use
 the internal bearer token: Slack cannot send one. It is authenticated by the

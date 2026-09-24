@@ -1,4 +1,4 @@
-"""Which team owns this exception (Volume 06 section 9.12).
+"""Which team owns this exception.
 
 Routing is DETERMINISTIC. A model recommendation, where present, is displayed
 as context and is never a routing input. Two runs with identical exceptions and

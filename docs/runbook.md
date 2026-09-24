@@ -35,7 +35,7 @@ as `skipped_unchanged`.
 That is the trap worth understanding. **Workflow 01 only calls workflow 02 for
 runs it ingested in that execution.** A run stranded at `INGESTED` by an earlier
 poll is never picked up again, because the poll is the only thing that triggers
-reconciliation. Automatic recovery is Volume 11 and is deferred; until then the
+reconciliation. Automatic recovery is deferred (`docs/limitations-and-roadmap.md`); until then the
 loop below is the recovery:
 
 ```bash
@@ -95,7 +95,7 @@ SELECT fixture_status, count(*) FROM seed_fixtures GROUP BY 1;
 become runs, and the demo company's own sample invoices are not on it.
 
 **Action.** If the count of `ACTIVE` is zero or wrong, repopulate from the
-captured fixtures as in Part 6 Stage 6.11. If it looks right, confirm the
+captured fixtures in `tests/fixtures/`. If it looks right, confirm the
 invoice ids in `seed_fixtures` match the ones Xero is returning; a demo company
 reset changes them.
 
@@ -140,8 +140,8 @@ crash leaves a visible `STARTED` row rather than a call nobody recorded.
 Notification is then correctly refused, because I31 requires a terminal stage: a
 card posted now would change under the reviewer.
 
-**Action.** There is no automatic recovery in this build; that is Volume 11 and
-it is deferred. Resolve by hand:
+**Action.** There is no automatic recovery in this build; it is deferred
+(`docs/limitations-and-roadmap.md`). Resolve by hand:
 
 ```sql
 UPDATE semantic_attempts SET status='REJECTED',
@@ -209,5 +209,5 @@ There is no on-call rotation. This is a portfolio project in a demo company with
 synthetic data, and the honest answer to "who do I page" is nobody.
 
 If the demo company has reset, the fixtures are gone and the recorded
-demonstration is the durable artefact. Rebuild the fixtures from Part 1 Stage 1.7
-and re-run `scripts/capture_fixtures.py`.
+demonstration is the durable artefact. Re-create the synthetic bills and purchase
+orders in the demo company, then re-run `scripts/capture_fixtures.py`.

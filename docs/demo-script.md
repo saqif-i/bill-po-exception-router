@@ -42,5 +42,5 @@ persuasive.
 **Do not narrate internals.** No fencing tokens, no idempotency registry. If
 someone wants that, the repository is there.
 
-**Claim only measured numbers** (Volume 12 section 9.8). If you have not run the
+**Claim only measured numbers.** If you have not run the
 evaluation, say nothing about accuracy.

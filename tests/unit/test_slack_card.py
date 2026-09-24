@@ -1,6 +1,6 @@
 """The triage card, and the wording that is invariant I03.
 
-Volume 09 sections 9.4 and 9.6. Pure: no Slack workspace, no network.
+Invariant I03. Pure: no Slack workspace, no network.
 
 I03 says Slack controls express operational triage decisions, not financial
 approval. That invariant lives in the button labels, so the labels are what a

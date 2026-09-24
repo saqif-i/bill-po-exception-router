@@ -50,7 +50,7 @@ def no_write_methods_exist() -> bool:
 
 @dataclass(frozen=True)
 class RetrySchedule:
-    """Volume 04 section 9.3."""
+    """Retry and backoff limits for Xero calls (I13)."""
 
     max_attempts: int = 4
     backoff_base_seconds: float = 1.0

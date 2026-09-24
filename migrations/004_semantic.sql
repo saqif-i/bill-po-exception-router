@@ -1,5 +1,5 @@
 -- 004_semantic.sql
--- Owner: Volume 08. Applied as bpr_owner. Forward-only.
+-- Semantic review attempts. Applied as bpr_owner. Forward-only.
 --
 -- One row per invocation, and exactly one transition per row. The lifecycle is
 -- deliberately multi-step: a remote call cannot be committed atomically with a

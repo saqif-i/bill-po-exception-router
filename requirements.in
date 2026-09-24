@@ -6,6 +6,6 @@ pydantic>=2,<3
 pydantic-settings>=2,<3
 psycopg[binary,pool]>=3,<4
 httpx
-# Part 7. The provider call is plain HTTP via httpx, so the SDK is not
+# Anthropic. The provider call is plain HTTP via httpx, so the SDK is not
 # required; jsonschema validates the strict schema in tests.
 jsonschema

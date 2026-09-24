@@ -1,7 +1,7 @@
 """Typed bill, purchase order and chart of accounts.
 
 Decimals are parsed from strings. Account codes are strings from parsing
-through persistence and are never coerced from a JSON number (section 9.5).
+through persistence and are never coerced from a JSON number.
 """
 
 from __future__ import annotations
@@ -80,7 +80,7 @@ class PurchaseOrder(BaseModel):
 
 
 class Tolerances(BaseModel):
-    """Volume 06 sections 9.6 and 9.7.
+    """Comparison tolerances (I04).
 
     Quantity and unit price default to ZERO tolerance. A supplier billing a
     different quantity or price is exactly what this system exists to surface.

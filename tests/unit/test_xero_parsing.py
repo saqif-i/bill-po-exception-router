@@ -1,4 +1,4 @@
-"""Decimal-safe parsing, Volume 04 section 9.8."""
+"""Decimal-safe parsing."""
 
 from __future__ import annotations
 

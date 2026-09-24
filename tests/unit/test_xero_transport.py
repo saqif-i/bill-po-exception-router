@@ -1,4 +1,4 @@
-"""The allow-list and the retry schedule, Volume 04 sections 9.3 to 9.5.
+"""The allow-list and the retry schedule (I07, I13).
 
 Pure functions, so every branch is tested without a network.
 """

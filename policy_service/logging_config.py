@@ -1,6 +1,6 @@
 """Structured logging, with redaction applied on the way out.
 
-Volume 02 section 9.7.
+Invariant I15.
 
 Redaction happens in the **formatter**, not at each call site. A call site that
 forgets is the normal case, and a redactor you have to remember to call is a

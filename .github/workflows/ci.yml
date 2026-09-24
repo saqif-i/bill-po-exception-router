@@ -61,7 +61,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        # Pinned to the same major the guide pins locally.
+        # Pinned to the same major as POSTGRES_IMAGE locally (docs/change-control.md).
         image: postgres:16-bookworm
         env:
           POSTGRES_USER: ci

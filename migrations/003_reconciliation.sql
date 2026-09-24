@@ -1,5 +1,5 @@
 -- 003_reconciliation.sql
--- Owner: Volume 06. Applied as bpr_owner. Forward-only.
+-- Reconciliation results and exceptions. Applied as bpr_owner. Forward-only.
 --
 -- The exception_code CHECK below is generated from
 -- policy_service/domain/enums.ExceptionCode, so the database and the engine

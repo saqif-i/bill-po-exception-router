@@ -2,8 +2,8 @@
 
 What this system does not do, why, and what it would take. Written because a
 portfolio project that lists only its features is asking to be taken on trust,
-and because the design guide this was built from spends most of its length
-refusing to claim things it had not verified.
+and because the design this was built from spends most of its length refusing
+to claim things it had not verified.
 
 Nothing here is an apology. Every item is a decision with a reason, or a known
 gap with a cost attached.
@@ -29,23 +29,24 @@ write costs an entire subsystem.
 
 **What follows from this:** the triage decision closes in Slack, not in Xero. A
 reviewer in the AP system sees no trace of the decision. In a real deployment that
-would be the first thing to add, and the guide's Volumes 10 and 11 describe how.
+would be the first thing to add, on top of the transactional outbox deferred in
+ADR-006.
 
 ---
 
 ## 2. Deferred subsystems
 
-Five volumes of the original design are not built. Each is deferred, not
-abandoned, and the repository tree is a strict subset of the canonical tree so
-each can be added without rework.
+Five components of the full design are not built. Each is deferred, not
+abandoned, and the repository tree is a strict subset of the full design's tree
+(`BUILD-SCOPE-v1.md` section 4) so each can be added without rework.
 
 | Deferred | What it provides | Why not in v1 |
 |---|---|---|
-| **Transactional outbox** (V10) | Durable intent for every external call, so a dead process loses no work | Its purpose is to make an external mutation honest. v1 makes none. |
-| **Retries, recovery and replay** (V11) | `OUTCOME_UNKNOWN`, action-specific replay, dead-letter view, manual reconciliation of unknown write outcomes | Same dependency. There is no external write whose fate could be unknown. |
-| **Fixture reset machinery** (V05) | Fixture identity surviving a Demo Company reset, under a durable leased operation | Fixtures are reseeded by hand after a reset. See section 4. |
-| **Optional webhooks** (V13) | Event-driven ingestion instead of polling | Not a cut. Its own completion gate forbids implementation while S14b is unread, and S14b was never resolved. Recorded as `NOT_APPLICABLE`. |
-| **Security and performance hardening depth** (V14) | Audit-grade privacy controls, load characterisation | Reduced to the controls that fit v1's surface, documented in `docs/security.md`. |
+| **Transactional outbox** | Durable intent for every external call, so a dead process loses no work | Its purpose is to make an external mutation honest. v1 makes none. |
+| **Retries, recovery and replay** | `OUTCOME_UNKNOWN`, action-specific replay, dead-letter view, manual reconciliation of unknown write outcomes | Same dependency. There is no external write whose fate could be unknown. |
+| **Fixture reset machinery** | Fixture identity surviving a Demo Company reset, under a durable leased operation | Fixtures are reseeded by hand after a reset. See section 4. |
+| **Optional webhooks** | Event-driven ingestion instead of polling | Not a cut. Implementation is forbidden while S14b is unread, and S14b was never resolved. Recorded as `NOT_APPLICABLE`. |
+| **Security and performance hardening depth** | Audit-grade privacy controls, load characterisation | Reduced to the controls that fit v1's surface, documented in `docs/security.md`. |
 
 ---
 
@@ -84,8 +85,7 @@ anyone extending this should replace the convention rather than build on it.
 **Slack delivery is at-least-once. Duplicates are possible.** Without a durable
 posting intent, a post that succeeds with a lost response can produce a second
 card. This is visible in the audit trail. Exactly-once Slack posting is not
-achievable through the Slack API and the guide's own risk register says it must
-not be claimed; v1 holds that line without the machinery that narrowed the window.
+achievable through the Slack API, so it is not claimed; v1 holds that line without the machinery that narrowed the window.
 
 **The card update is best-effort.** A lost response can leave a card showing an
 open exception whose decision was correctly recorded. The database is
@@ -140,16 +140,16 @@ action intent, no outbox, no command fence, no replay and no unknown outcome to
 reconcile. They are I18, I21, I22, I25, I29, I30, I35, I37, I38, I39 and I40.
 
 The three deferred (I24, I33, I34) are the generic lease and fencing rules. They
-are deferred rather than not applicable because a later volume would introduce
-leased operations that need them.
+are deferred rather than not applicable because the recovery and fixture reset
+components would introduce leased operations that need them.
 
 ---
 
 ## 6. Sources still unread
 
-The design guide tracks every external fact to a source with an access date, and
-marks a source `PENDING_ACCESS` when the canonical page could not be read. Seven
-remain pending. **None is blocking for v1**, and each is listed with what it would
+Every external provider fact the design relies on is tied to a source with an
+access date, and a source is marked `PENDING_ACCESS` when the canonical page
+could not be read. Seven remain pending. **None is blocking for v1**, and each is listed with what it would
 settle.
 
 | Source | Subject | What it would settle |
@@ -177,22 +177,22 @@ tracked as an unread source until someone opens the page.
 
 ## 7. Roadmap, in the order it should be built
 
-**1. Durable outbox (V10).** Reactivates I21, I22, I29, I35 and I40, and restores
+**1. Durable outbox.** Reactivates I21, I22, I29, I35 and I40, and restores
 I07 to its full surface. Prerequisite for everything below, and for any external
 write. Read S10a first.
 
-**2. Retries, recovery and replay (V11).** Reactivates I18, I25, I30, I37, I38 and
+**2. Retries, recovery and replay.** Reactivates I18, I25, I30, I37, I38 and
 requires I24 and I39. Turns the best-effort card update into a durable lifecycle
 and gives operators a dead-letter view.
 
-**3. Fixture reset machinery (V05).** Reactivates I33 and I34. Removes the manual
+**3. Fixture reset machinery.** Reactivates I33 and I34. Removes the manual
 reseeding tax after every Demo Company reset.
 
-**4. Escalation and ageing.** Not in the original design. Open question 4 in the
+**4. Escalation and ageing.** Not part of the full design. Open question 4 in the
 requirements brief. Requires a policy from a real stakeholder before it can be
 built.
 
-**5. Webhooks (V13).** Only if S14b establishes that a Custom Connection can be
+**5. Webhooks.** Only if S14b establishes that a Custom Connection can be
 configured for webhook delivery. Current reading suggests webhook configuration is
 a per-app facility that may not be available to this connection type, which is
 exactly why the source needs reading rather than assuming.

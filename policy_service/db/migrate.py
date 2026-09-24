@@ -1,12 +1,12 @@
 """Forward-only migration runner.
 
 Numbered SQL migrations recorded in `schema_migrations`, refusing to run out of
-order (Volume 03 section 9.1). Applied as bpr_owner; the runtime roles never
+order. Applied as bpr_owner; the runtime roles never
 receive DDL authority.
 
 Files are applied in lexical order of what exists on disk. The sequence is
 deliberately NOT asserted to be contiguous: v1 creates 001, 003, 004 and 005,
-and 002 belongs to deferred Volume 05. See BUILD-SCOPE-v1.md section 4.
+and 002 is reserved for deferred demo-seeding work. See BUILD-SCOPE-v1.md section 4.
 """
 
 from __future__ import annotations

@@ -1,6 +1,6 @@
 """The semantic stage: the gate, the lifecycle, and the persistence.
 
-Volume 08 sections 9.3, 9.4, 9.6 and 9.14.
+Invariants I06, I26 and I32; ADR-003.
 
 The gate itself already ran: the reconciler recorded `semantic_permitted` and a
 `semantic_gate_reason` on every run. This module re-checks the persisted state

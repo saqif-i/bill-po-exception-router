@@ -1,6 +1,6 @@
 """The Anthropic call.
 
-Volume 08 sections 9.6 and 9.13, and ADR-003: the call is made here, in the
+ADR-003: the call is made here, in the
 service, not from an n8n HTTP node. Three reasons. Validation runs in tested
 in-process code before anything is persisted as usable. The attempt-start record
 is committed before the call, so an unrecorded call is detectable. And the

@@ -1,6 +1,6 @@
 """Safe error shapes.
 
-Volume 02 section 9.6: an error response carries a stable code and the
+An error response carries a stable code and the
 correlation id, and nothing else. No stack trace, no driver message, no SQL,
 no configuration value.
 """

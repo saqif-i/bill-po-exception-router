@@ -61,7 +61,7 @@ def _line(desc, **over):
 
 
 def _seed(conn, bill_over=None):
-    """A run at REVIEW_READY with a quantity variance, as Part 6 leaves it."""
+    """A run at REVIEW_READY with a quantity variance, as reconciliation leaves it."""
     invoice_id, fixture_id, run_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
     number = f"INV-{invoice_id.hex[:6]}"
     po_number = f"PO-{invoice_id.hex[:8]}"

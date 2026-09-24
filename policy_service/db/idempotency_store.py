@@ -1,6 +1,6 @@
 """The idempotency registry, against PostgreSQL.
 
-Volume 02 section 9.9 defines the wire contract; this implements it. The
+`policy_service/api/idempotency.py` defines the wire contract; this implements it. The
 behaviour table, which the tests follow row for row:
 
     existing record            incoming                response

@@ -188,7 +188,7 @@ becomes an unaccountable approver.
 | **M5** Exceptions with no visible owner | 0 | BR-6, and the direct answer to A6. |
 | **M6** Time from bill arrival to a person being notified | Minutes | The current process has no defined answer to this. |
 
-M1 and M2 are reported in `docs/testing-and-evaluation.md` from a labelled
+M1 and M2 are reported in the [README results](../README.md#results) from a labelled
 evaluation set. M3 to M5 are structural: the schema does not permit a violation.
 
 ---
@@ -212,12 +212,12 @@ Recorded so that the absences read as decisions. Full reasoning in
 
 | Requirement | Where it is met |
 |---|---|
-| BR-1 | Deterministic reconciliation (Volume 06), n8n polling and processing (Volume 07) |
-| BR-2 | The exception-code set in Volume 06 sections 9.3 and 9.6 |
-| BR-3 | `policy_service/domain/routing.py`, Volume 06 section 9.12 |
-| BR-4 | The invocation gate and bounded contract in Volume 08 |
-| BR-5 | The run and decision schema in Volume 03, Slack decision capture in Volume 09 |
-| BR-6 | Error-handler workflow (Volume 07), failed-runs view and alert, `docs/runbook.md` |
+| BR-1 | `policy_service/domain/reconciliation.py`; `n8n/workflows/01-bill-polling.json` and `02-bill-processing.json` |
+| BR-2 | `ExceptionCode` in `policy_service/domain/enums.py`, mirrored by the CHECK constraint in `migrations/003_reconciliation.sql` |
+| BR-3 | `policy_service/domain/routing.py` |
+| BR-4 | The invocation gate in `reconcile()`; the bounded contract in `policy_service/integrations/claude_contract.py` and `schemas/` |
+| BR-5 | Runs and decisions in `migrations/001_core_schema.sql` and `005_triage_and_slack.sql`; Slack decision capture in `policy_service/api/slack.py` and `policy_service/domain/triage.py` |
+| BR-6 | `n8n/workflows/03-error-handler.json`, the `stuck_runs` count in `scripts/capture_metrics.py`, and `docs/runbook.md` |
 | Section 6 boundary | Invariants I01, I02, I03, I05, I06, I26, I27. See `docs/invariant-register-v1.md`. |
 
 ---

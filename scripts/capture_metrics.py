@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """The numbers for the README, read straight out of the database.
 
-Volume 12 section 9.8: a result may be claimed only after it has been measured.
+A result may be claimed only after it has been measured.
 So this prints what is true of YOUR run, and nothing is hard-coded.
 
     python scripts/capture_metrics.py

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Assert the n8n database boundary against the running container.
 
-Volume 01 section 9.9. ADR-002 says the boundary is enforced by role grants
+ADR-002 says the boundary is enforced by role grants
 rather than by configuration; this proves it.
 """
 

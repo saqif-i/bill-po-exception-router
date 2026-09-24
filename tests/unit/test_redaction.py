@@ -1,4 +1,4 @@
-"""Redaction, Volume 02 section 9.7 and Volume 14 section 12.
+"""Redaction, invariant I15.
 
 Invariant I15: secrets are never written to logs, fixtures, workflow exports,
 screenshots, evaluation data or Git.

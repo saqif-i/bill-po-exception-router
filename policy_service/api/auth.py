@@ -1,6 +1,6 @@
 """Bearer authentication with a constant-time comparison.
 
-Volume 02 section 9.3. `==` on a secret leaks length and prefix through timing,
+`==` on a secret leaks length and prefix through timing,
 so the comparison helper is used everywhere and a unit test asserts that `==`
 does not appear in the authentication path.
 """

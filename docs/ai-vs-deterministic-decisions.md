@@ -60,8 +60,10 @@ down to a single residual pair: exactly one unpaired bill line, exactly one
 unpaired purchase-order line, and **every numeric and coding comparison on those
 two residual lines already passing**.
 
-Thirteen conditions must all hold. The full list is in Volume 08 section 9.3, but
-the significant ones are:
+Thirteen conditions must all hold. They are checked in `reconcile()`
+(`policy_service/domain/reconciliation.py`) and re-checked before the call in
+`load_eligible_run()` (`policy_service/domain/semantic.py`). The significant ones
+are:
 
 - The run is in `REVIEW_READY` and both documents are on the active fixture
   allow-list.
@@ -73,9 +75,9 @@ the significant ones are:
   description **fails the gate rather than being truncated**, because truncating
   changes the thing being compared.
 
-**Condition 12 is the one that matters.** Conditions 10 and 11 make a
-one-string-against-one-string prompt structurally sound. Condition 12 makes it
-meaningful. Without it, a residual pair differing on price as well as wording
+**Numeric agreement on the residual pair is the one that matters.** The
+one-line-each-side conditions make a one-string-against-one-string prompt
+structurally sound. Numeric agreement makes it meaningful. Without it, a residual pair differing on price as well as wording
 would be sent as though wording were the only open question, and a
 `LIKELY_EQUIVALENT` answer would actively mislead the person reading the card.
 This is invariant I26.
@@ -85,8 +87,8 @@ every run, whether or not a call was made**. The gate's behaviour is auditable
 rather than inferred, and a test asserts that the account-code gate set is
 excluded before any model call is constructed.
 
-**The measured effect of the gate is reported in
-`docs/testing-and-evaluation.md`.** The gate is not a claim; it is a number.
+**The measured effect of the gate is reported in the
+[README results](../README.md#results).** The gate is not a claim; it is a number.
 
 ---
 

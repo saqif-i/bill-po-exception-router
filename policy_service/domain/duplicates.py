@@ -1,4 +1,4 @@
-"""Duplicate detection (Volume 06 section 9.8).
+"""Duplicate detection (I04).
 
 Hashing and comparison. Never a model's judgement: a rule cannot be talked into
 missing a duplicate, and a duplicate that slips through is a payment made twice.

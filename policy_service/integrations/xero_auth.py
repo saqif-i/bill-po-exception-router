@@ -1,4 +1,4 @@
-"""Custom Connection token acquisition and caching (Volume 04 section 9.2).
+"""Custom Connection token acquisition and caching.
 
 OAuth 2.0 client credentials. No refresh token is issued; a new access token is
 requested with only the client id and secret. Tokens last 30 minutes, so the

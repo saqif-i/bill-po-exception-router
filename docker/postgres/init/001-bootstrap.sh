@@ -2,7 +2,7 @@
 # Executes ONCE, on first initialisation of the postgres data volume.
 #
 # The bootstrap superuser credential is consumed only here. It is never passed
-# to the policy service, to demo_seed, or to n8n (Volume 01 section 9.5).
+# to the policy service, to demo_seed, or to n8n (I15, ADR-002).
 #
 # The n8n boundary is stated by explicit REVOKE rather than left implicit.
 #
@@ -43,7 +43,7 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname postgres \
 
     -- A separate database for the integration tests. Without it they write
     -- fixtures, runs and decisions into the application database, and the demo
-    -- query in Part 7 comes back full of rows from a fake model.
+    -- queries come back full of rows from a fake model.
     CREATE DATABASE :"test_db" OWNER :"owner";
     CREATE DATABASE :"n8n_db" OWNER :"n8n_user";
 

@@ -31,7 +31,7 @@ CHART = frozenset({"0010", "0020"})
 # Each bill gets its own reference. The business-key duplicate check hashes
 # supplier, total, currency, date and reference together, so reusing one
 # reference across fixtures makes every later run a genuine duplicate of an
-# earlier one. The real fixtures in Part 1 have distinct PO numbers for the
+# earlier one. The real fixtures in tests/fixtures/ have distinct PO numbers for the
 # same reason.
 SUPPLIER = "99999999-8888-7777-6666-555555555555"
 

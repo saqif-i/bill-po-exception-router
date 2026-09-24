@@ -1,4 +1,4 @@
-"""The API-level idempotency contract (Volume 02 section 9.9).
+"""The API-level idempotency contract (I10, I36).
 
 Validation happens BEFORE any domain mutation. A malformed key must not be able
 to leave a half-finished run behind.

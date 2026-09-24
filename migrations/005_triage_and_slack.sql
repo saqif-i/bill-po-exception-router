@@ -1,5 +1,5 @@
 -- 005_triage_and_slack.sql
--- Owner: Volume 09. Applied as bpr_owner. Forward-only.
+-- Triage decisions and Slack delivery. Applied as bpr_owner. Forward-only.
 --
 -- Reduced for this build: the durable SLACK_RESULT_UPDATE lifecycle belongs to
 -- the transactional outbox, which is not built here. The card update is

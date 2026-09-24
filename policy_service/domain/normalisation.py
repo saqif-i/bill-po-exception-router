@@ -1,6 +1,6 @@
 """Pure functions. No I/O, no configuration, no state.
 
-Volume 06 section 9.4 requires that normalisation be used IDENTICALLY for
+Normalisation must be used IDENTICALLY for
 pairing and for anything sent to a model provider. If the two diverged, the
 model could be shown text that never had a chance to pair, and the gate's
 guarantee would be meaningless. That is why these live in one module and are
@@ -17,7 +17,7 @@ import re
 import unicodedata
 from decimal import Decimal, InvalidOperation
 
-# Volume 06 section 9.5. Bounded project format for an account code.
+# Bounded project format for an account code.
 ACCOUNT_CODE_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,31}$")
 
 _WHITESPACE = re.compile(r"\s+")
@@ -100,7 +100,7 @@ def normalise_currency(value: str | None) -> str:
 
 
 def to_decimal(value: object) -> Decimal | None:
-    """Decimal-safe parsing (Volume 04 section 9.8).
+    """Decimal-safe parsing (see policy_service/integrations/xero_parsing.py).
 
     A float is rejected rather than converted, because 0.1 + 0.2 is not 0.3 and
     a financial comparison must not inherit that. Xero returns JSON numbers;

@@ -1,4 +1,4 @@
-"""Request-size and field-length limits (Volume 02 section 9.5).
+"""Request-size and field-length limits.
 
 A bounded request is the cheapest denial-of-service control there is, and it
 also stops an oversized body from reaching the JSON parser at all.

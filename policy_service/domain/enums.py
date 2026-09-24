@@ -1,4 +1,4 @@
-"""The complete deterministic vocabulary (Volume 06 section 9.10).
+"""The complete deterministic vocabulary.
 
 Every code the reconciler can emit is named here. Nothing constructs a code as
 a string literal elsewhere, so the set is closed and the Slack card, the
@@ -11,7 +11,7 @@ from enum import StrEnum
 
 
 class Outcome(StrEnum):
-    """The three terminal reconciliation outcomes (section 9.13)."""
+    """The three terminal reconciliation outcomes."""
 
     MATCHED = "MATCHED"
     UNPROCESSABLE = "UNPROCESSABLE"
@@ -73,7 +73,7 @@ class ExceptionCode(StrEnum):
     DUPLICATE_INVOICE_NUMBER = "DUPLICATE_INVOICE_NUMBER"
     DUPLICATE_BUSINESS_KEY = "DUPLICATE_BUSINESS_KEY"
 
-    # residual pair, section 9.9. Same checks, separate codes, so a card can
+    # residual pair (I26, I27). Same checks, separate codes, so a card can
     # say the wording differs AND the numbers differ.
     RESIDUAL_QUANTITY_VARIANCE = "RESIDUAL_QUANTITY_VARIANCE"
     RESIDUAL_UNIT_PRICE_VARIANCE = "RESIDUAL_UNIT_PRICE_VARIANCE"
@@ -145,9 +145,9 @@ class SemanticGateReason(StrEnum):
 
 
 class SemanticStageStatus(StrEnum):
-    """Initialised once by the reconciliation transaction (section 9.14).
+    """Initialised once by the reconciliation transaction.
 
-    Volume 08 owns every transition after initialisation.
+    `policy_service/domain/semantic.py` owns every transition after initialisation.
     """
 
     NOT_REQUIRED = "NOT_REQUIRED"

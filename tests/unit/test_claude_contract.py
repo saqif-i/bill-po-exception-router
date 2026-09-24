@@ -1,4 +1,4 @@
-"""What the model may return, Volume 08 sections 9.8, 9.10 and 9.12.
+"""What the model may return, invariant I06.
 
 Pure, so every rejection path is exercised without an API key or a network.
 """

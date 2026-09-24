@@ -1,4 +1,4 @@
-"""Token acquisition and caching, Volume 04 section 9.2."""
+"""Token acquisition and caching."""
 
 from __future__ import annotations
 

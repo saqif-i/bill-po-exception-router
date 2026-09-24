@@ -3,7 +3,7 @@
 Two jobs: derive the ingestion version key, and enforce the fixture allow-list.
 
 The allow-list check happens HERE, in the service, not on the n8n canvas
-(Volume 07 section 9.4). A record failing it never becomes a run. On the first
+(I14). A record failing it never becomes a run. On the first
 poll against a Demo Company this is the difference between nine runs and
 ninety, because the demo company arrives pre-populated with sample invoices.
 """

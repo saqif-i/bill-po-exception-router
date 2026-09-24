@@ -1,4 +1,4 @@
-"""The runtime read client (Volume 04 section 9.11).
+"""The runtime read client.
 
 Read-only. Every call goes through the transport allow-list, which contains no
 write method (ADR-006). Every response body is read as TEXT and parsed with the

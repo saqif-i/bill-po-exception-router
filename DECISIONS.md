@@ -1,8 +1,8 @@
 # Architecture decisions
 
 Decisions that shaped this system, with the reasoning and the alternatives
-rejected. ADR-001 through ADR-005 come from the implementation guide (Volume 00
-section 7) and are reproduced here with their v1 status. ADR-006 through ADR-008
+rejected. ADR-001 through ADR-005 were made for the full design, before the v1
+scope was set, and are shown here with their v1 status. ADR-006 through ADR-008
 are v1 decisions, recorded in `BUILD-SCOPE-v1.md`.
 
 An ADR is not amended silently. Where v1 changed one, the original position is
@@ -47,7 +47,8 @@ service. It has no database credential, no Xero credential, no Anthropic key and
 no Slack token. It calls the service over HTTP and nothing else.
 
 **Enforced by database role grants, not only by configuration.** The two-database
-boundary from Volume 01 section 9.9 means that even a leaked n8n configuration
+boundary (`docker/postgres/init/001-bootstrap.sh`, asserted by `make check-db`)
+means that even a leaked n8n configuration
 cannot read application data.
 
 **Consequences.** Business logic must live in the service rather than in workflow
@@ -73,8 +74,9 @@ prompt lives in a versioned file rather than a workflow canvas field, so a promp
 change is a reviewable diff.
 
 **This is not an atomicity argument.** A remote call cannot be committed
-atomically with a transaction. Volume 08 defines the multi-step lifecycle that
-handles that honestly, and v1 implements it.
+atomically with a transaction. The semantic attempt lifecycle
+(`migrations/004_semantic.sql`, `policy_service/domain/semantic.py`) handles that
+honestly: the attempt is recorded before the call and finalised after it.
 
 ---
 
@@ -96,7 +98,7 @@ durable, which is stated in `BUILD-SCOPE-v1.md` section 3 and is not claimed to 
 otherwise.
 
 **Rejected alternative.** n8n posts the card. Permitted by the credential model,
-not used. Volume 15 records the trade-off.
+not used: it would put a Slack token in n8n, which ADR-002 rules out.
 
 ---
 
@@ -118,8 +120,8 @@ connection is read-only and the claim that nothing changes a bill is backed by t
 credential itself rather than by application logic.
 
 **Rejected alternative.** A second, seed-only connection with write scopes.
-Volume 05 records this and requires its cost position to be recorded as verified
-or unverified rather than assumed. v1 does not need it.
+It adds a second credential, and its cost position is unverified. v1 does not
+need it.
 
 ---
 
@@ -139,14 +141,14 @@ project whose central claim is that nothing changes a bill. S10a, the source tha
 would settle whether `POST` is supported for history records, is still
 `PENDING_ACCESS`, and the project's rule is not to infer missing provider details.
 And one durable external write honestly implemented requires the transactional
-outbox, leases, fencing, replay and `OUTCOME_UNKNOWN`, which is Volumes 10 and 11
-in full.
+outbox, leases, fencing, replay and `OUTCOME_UNKNOWN`: the deferred durable
+outbox and recovery and replay components in full.
 
 **Consequences.** Eleven invariants have no subject in v1 and are recorded as not
 applicable with a reason in `docs/invariant-register-v1.md`. The triage loop needs
 a visible ending in Slack instead, which is ADR-007. The reverse is cheap: the
-repository tree is a strict subset of the canonical tree, so building Volume 10
-later is additive rather than a rewrite.
+repository tree is a strict subset of the full design's tree, so building the
+durable outbox later is additive rather than a rewrite.
 
 ---
 
@@ -160,8 +162,8 @@ observable happens outside the database. The loop has no visible ending.
 **Decision.** After the decision commits, update the Slack card in place to show
 the decision, who made it, when, and the destination.
 
-**This is best-effort and is not the durable `SLACK_RESULT_UPDATE` lifecycle from
-Volume 10.** A lost response can leave the card stale while the decision is
+**This is best-effort and is not the durable `SLACK_RESULT_UPDATE` lifecycle the
+deferred durable outbox would provide.** A lost response can leave the card stale while the decision is
 correctly recorded. The database is authoritative; the card is a view. This is
 consistent with the at-least-once position already stated for Slack delivery, and
 it is not claimed to be exactly-once.
@@ -193,5 +195,5 @@ the real API.
 
 **Consequences.** Tests run offline, fast and deterministically, with no rate
 limits and no token expiry. The risk is fixtures drifting from the real API
-shape, mitigated by the response schemas from Volume 04 section 9.9 being
-validated against both.
+shape. The mitigation is re-capturing them with `scripts/capture_fixtures.py`;
+no response schema validates them yet.

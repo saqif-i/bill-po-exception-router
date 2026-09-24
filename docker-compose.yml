@@ -1,4 +1,4 @@
-# Images are pinned by tag AND digest (Volume 01 section 9.4). A floating tag
+# Images are pinned by tag AND digest (docs/change-control.md). A floating tag
 # would make "the same docker compose up" mean two different things on two
 # days, which contradicts the locked dependency set.
 services:
@@ -65,7 +65,7 @@ services:
       postgres:
         condition: service_healthy
     ports:
-      # Loopback only. Slack reaches this through the tunnel in Part 8,
+      # Loopback only. Slack reaches this through a local tunnel,
       # which terminates locally, so nothing needs a public bind.
       - "127.0.0.1:8000:8000"
     healthcheck:

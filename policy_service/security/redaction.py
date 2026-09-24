@@ -1,6 +1,6 @@
 """Redaction for anything that reaches a log, an event payload or a screenshot.
 
-Volume 02 section 9.7 and Volume 14 section 12.
+Invariant I15; see docs/security.md.
 
 The design choice worth understanding: this is an **allow-list on keys** and a
 pattern scrub on values, not a deny-list of known secret names. A deny-list

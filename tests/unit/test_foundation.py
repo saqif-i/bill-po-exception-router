@@ -1,4 +1,4 @@
-"""Foundation checks that depend only on files that exist in Part 2.
+"""Foundation checks that depend only on repository files, not application code.
 
 `pytest` exits non-zero when it collects nothing, so a green CI run needs real
 assertions rather than an empty suite. These assert things that are true the
