@@ -51,7 +51,7 @@ Expressing that as connector steps would make it slower to test, harder to
 review and impossible to reason about as a unit. It is business logic, not
 integration.
 
-**The semantic gate.** Thirteen conditions, evaluated together, that decide
+**The semantic gate.** Twelve conditions, evaluated together, that decide
 whether a model may be consulted at all. The gate's value is that it is one
 function with one test suite. Spread across a canvas it becomes a diagram
 nobody can verify.

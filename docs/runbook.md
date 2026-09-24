@@ -1,6 +1,6 @@
 # Runbook
 
-Six failures, each one **deliberately triggered** before this was written. If a
+Seven failures, each one **deliberately triggered** before this was written. If a
 symptom here does not match what you see, the runbook is wrong and should be
 corrected rather than worked around.
 

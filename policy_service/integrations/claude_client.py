@@ -94,18 +94,22 @@ class ClaudeClient:
             )
         except httpx.TimeoutException:
             return ProviderResult(
-                rejection=Rejection(RejectionReason.MALFORMED, "timeout"),
+                rejection=Rejection(RejectionReason.TIMEOUT, "timeout"),
                 model=self.model,
             )
         except httpx.HTTPError as exc:
             return ProviderResult(
-                rejection=Rejection(RejectionReason.MALFORMED, f"transport: {type(exc).__name__}"),
+                rejection=Rejection(
+                    RejectionReason.PROVIDER_UNAVAILABLE, f"transport: {type(exc).__name__}"
+                ),
                 model=self.model,
             )
 
         if response.status_code >= 400:
             return ProviderResult(
-                rejection=Rejection(RejectionReason.MALFORMED, f"provider {response.status_code}"),
+                rejection=Rejection(
+                    RejectionReason.PROVIDER_UNAVAILABLE, f"provider {response.status_code}"
+                ),
                 model=self.model,
             )
 

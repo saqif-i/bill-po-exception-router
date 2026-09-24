@@ -33,6 +33,8 @@ _REVIEW_REASON = {
     RejectionReason.REFUSED: HumanReviewReason.SEMANTIC_REFUSED,
     RejectionReason.TRUNCATED: HumanReviewReason.SEMANTIC_TRUNCATED,
     RejectionReason.UNEXPECTED_STOP: HumanReviewReason.SEMANTIC_UNEXPECTED_STOP_REASON,
+    RejectionReason.TIMEOUT: HumanReviewReason.SEMANTIC_TIMEOUT,
+    RejectionReason.PROVIDER_UNAVAILABLE: HumanReviewReason.SEMANTIC_PROVIDER_UNAVAILABLE,
 }
 
 

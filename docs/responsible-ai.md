@@ -24,7 +24,7 @@ Enforced structurally rather than by instruction:
 
 ## It is consulted rarely, and only when nothing else is in doubt
 
-Thirteen gate conditions must hold, the significant one being that **every
+Twelve gate conditions must hold, the significant one being that **every
 deterministic check on the residual pair has already passed**. Wording must be
 the sole unresolved difference. The gate reason is recorded on every run,
 including matched ones, so the gate's behaviour is auditable rather than

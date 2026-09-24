@@ -22,7 +22,11 @@ from policy_service.domain.enums import (
 )
 from policy_service.domain.models import Bill, PurchaseOrder
 from policy_service.domain.normalisation import normalise_loose, normalise_strict
-from policy_service.domain.reconciliation import pair_lines, reconcile
+from policy_service.domain.reconciliation import (
+    MAX_RESIDUAL_DESCRIPTION_CHARS,
+    pair_lines,
+    reconcile,
+)
 from policy_service.domain.routing import coverage_gaps
 
 # A mixed-case code is in the chart so case sensitivity can be tested against
@@ -331,6 +335,30 @@ def test_residual_account_code_mismatch_refuses_the_model():
     )
     assert result.semantic_permitted is False
     assert ExceptionCode.RESIDUAL_ACCOUNT_CODE_MISMATCH in result.exception_codes
+
+
+@pytest.mark.parametrize(
+    "bill_desc",
+    ["   ", "x" * (MAX_RESIDUAL_DESCRIPTION_CHARS + 1)],
+    ids=["empty", "over-long"],
+)
+def test_residual_description_out_of_bounds_refuses_the_model(bill_desc):
+    """Empty or over-long text closes the gate rather than being truncated."""
+    result = run(
+        bill_of([line(bill_desc)]),
+        po_of([line("Water, bottled, case of 24")]),
+    )
+    assert result.semantic_permitted is False
+    assert result.semantic_gate_reason is SemanticGateReason.RESIDUAL_DESCRIPTION_OUT_OF_BOUNDS
+    assert result.residual_comparison["all_checks_passed"] is False
+
+
+def test_residual_description_at_the_bound_still_permits_the_model():
+    result = run(
+        bill_of([line("x" * MAX_RESIDUAL_DESCRIPTION_CHARS)]),
+        po_of([line("Water, bottled, case of 24")]),
+    )
+    assert result.semantic_permitted is True
 
 
 def test_two_candidates_on_either_side_never_reach_the_model():

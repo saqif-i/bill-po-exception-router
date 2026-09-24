@@ -9,14 +9,6 @@ include .env
 export
 endif
 
-# Compose reads .env by itself. `make migrate` and `make check-db` run on the
-# host and do not, so they are given it explicitly. Without this they fail with
-# a missing-variable error that looks like a code fault.
-ifneq (,$(wildcard .env))
-include .env
-export
-endif
-
 .PHONY: help lock lock-local fmt lint test up down logs migrate check-db verify-secrets gate
 
 help:  ## show this help

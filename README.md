@@ -28,12 +28,12 @@ is advisory. One belongs to a person. The model is asked a single question, abou
 one pair of strings, only after every number already agrees, and its answer
 changes no outcome.
 
-**A gate that is measured rather than asserted.** Thirteen conditions must hold
+**A gate that is measured rather than asserted.** Twelve conditions must hold
 before a model is consulted, and the gate reason is recorded on **every** run,
 including matched ones, so its behaviour is auditable rather than inferred from
 the absence of a result.
 
-**Failure modes that are designed, not discovered.** Six ways a model call can
+**Failure modes that are designed, not discovered.** Eight ways a model call can
 fail, all landing in the same place: a human sees the case with no recommendation
 at all rather than a hedged one.
 

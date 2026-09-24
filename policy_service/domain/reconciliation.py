@@ -50,6 +50,11 @@ from policy_service.domain.normalisation import (
 )
 from policy_service.domain.routing import route
 
+# Upper bound on each normalised residual description sent to a model. An
+# over-long or empty description closes the gate rather than being truncated,
+# because truncating changes the thing being compared.
+MAX_RESIDUAL_DESCRIPTION_CHARS = 500
+
 ELIGIBLE_BILL_TYPE = "ACCPAY"
 ELIGIBLE_BILL_STATUS = "DRAFT"
 # DRAFT and SUBMITTED are not eligible: a bill should not arrive against an
@@ -108,7 +113,7 @@ class ReconciliationResult:
 # 1. eligibility
 # --------------------------------------------------------------------------
 def check_bill_eligibility(bill: Bill) -> UnprocessableReason | None:
-    """Section 9.1. Failing any condition gives UNPROCESSABLE."""
+    """Bill eligibility. Failing any condition gives UNPROCESSABLE."""
     if (bill.type or "").upper() != ELIGIBLE_BILL_TYPE:
         return UnprocessableReason.NOT_A_SUPPLIER_BILL
     if (bill.status or "").upper() != ELIGIBLE_BILL_STATUS:
@@ -138,7 +143,7 @@ def check_po_eligibility(
     reference_present: bool,
     allow_listed: bool,
 ) -> ExceptionCode | None:
-    """Section 9.2. These are exceptions, not eligibility failures: a human can
+    """Purchase-order checks. These are exceptions, not eligibility failures: a human can
     act on a missing purchase order."""
     if not reference_present:
         return ExceptionCode.NO_PO_REFERENCE
@@ -179,7 +184,7 @@ def _unique_match(keys_left: dict[int, str], keys_right: dict[int, str]) -> list
 def pair_lines(
     bill_lines: list[LineItem], po_lines: list[LineItem]
 ) -> tuple[list[tuple[int, int]], list[int], list[int]]:
-    """Section 9.4. Three tiers, in order, one-to-one at every tier."""
+    """Line pairing. Three tiers, in order, one-to-one at every tier."""
     remaining_bill = set(range(len(bill_lines)))
     remaining_po = set(range(len(po_lines)))
     pairs: list[tuple[int, int]] = []
@@ -316,7 +321,7 @@ def compare_line(
     chart: frozenset[str],
     variant: str = "paired",
 ) -> tuple[list[ExceptionCode], AccountCodeEvidence]:
-    """Sections 9.6 and 9.9.
+    """Line comparison and account-code checks.
 
     The SAME function and the SAME tolerances are applied to paired lines and
     to the provisional residual pair. That identity is the whole point: it is
@@ -481,12 +486,19 @@ def reconcile(
         for code in found:
             exceptions.append(ExceptionItem(code, "residual"))
 
-        residual_clean = not found
-        gate_reason = (
-            SemanticGateReason.RESIDUAL_PAIR_TEXT_ONLY
-            if residual_clean
-            else SemanticGateReason.RESIDUAL_PAIR_DETERMINISTIC_MISMATCH
+        bill_text = normalise_strict(bill_line.description)
+        po_text = normalise_strict(po_line.description)
+        descriptions_in_bounds = all(
+            0 < len(text) <= MAX_RESIDUAL_DESCRIPTION_CHARS for text in (bill_text, po_text)
         )
+
+        residual_clean = not found and descriptions_in_bounds
+        if found:
+            gate_reason = SemanticGateReason.RESIDUAL_PAIR_DETERMINISTIC_MISMATCH
+        elif not descriptions_in_bounds:
+            gate_reason = SemanticGateReason.RESIDUAL_DESCRIPTION_OUT_OF_BOUNDS
+        else:
+            gate_reason = SemanticGateReason.RESIDUAL_PAIR_TEXT_ONLY
 
         # The two NORMALISED descriptions are stored, because they are exactly
         # what a model call would be given and nothing more. The raw supplier
@@ -494,8 +506,8 @@ def reconcile(
         result.residual_comparison = {
             "bill_line_index": bill_index,
             "po_line_index": po_index,
-            "bill_line_description": normalise_strict(bill_line.description),
-            "po_line_description": normalise_strict(po_line.description),
+            "bill_line_description": bill_text,
+            "po_line_description": po_text,
             "quantity_delta": _delta(bill_line.quantity, po_line.quantity),
             "unit_price_delta": _delta(bill_line.unit_amount, po_line.unit_amount),
             "line_amount_delta": _delta(bill_line.line_amount, po_line.line_amount),
@@ -504,6 +516,7 @@ def reconcile(
             "po_tax_type": normalise_tax_type(po_line.tax_type) or None,
             "account_codes": vars(evidence),
             "exception_codes": [c.value for c in found],
+            "descriptions_in_bounds": descriptions_in_bounds,
             "all_checks_passed": residual_clean,
         }
 
@@ -565,7 +578,7 @@ def _finalise(
         result.semantic_permitted = False
         result.semantic_gate_reason = gate_reason
 
-    # 9.14. Configuration is NOT part of the deterministic gate. The gate
+    # Configuration is NOT part of the deterministic gate. The gate
     # result and the then-current flag are combined once, and the captured flag
     # is recorded, so a later configuration change cannot reinterpret this run.
     if not result.semantic_permitted:

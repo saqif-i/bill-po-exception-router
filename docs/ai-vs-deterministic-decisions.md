@@ -60,24 +60,44 @@ down to a single residual pair: exactly one unpaired bill line, exactly one
 unpaired purchase-order line, and **every numeric and coding comparison on those
 two residual lines already passing**.
 
-Thirteen conditions must all hold. They are checked in `reconcile()`
-(`policy_service/domain/reconciliation.py`) and re-checked before the call in
-`load_eligible_run()` (`policy_service/domain/semantic.py`). The significant ones
-are:
+Twelve deterministic conditions must all hold. They are evaluated by
+`reconcile()` and `_finalise()` in `policy_service/domain/reconciliation.py`,
+where any exception code in `SEMANTIC_BLOCKING_CODES`
+(`policy_service/domain/enums.py`) closes the gate:
 
-- The run is in `REVIEW_READY` and both documents are on the active fixture
-  allow-list.
-- Every deterministic check on every already-paired line has passed.
-- Account codes on the residual lines are present, format-valid, known in the
-  recorded chart, and exactly equal.
-- Exactly one line remains unpaired on each side.
-- Both residual descriptions are non-empty and within length bounds. An over-long
-  description **fails the gate rather than being truncated**, because truncating
-  changes the thing being compared.
+1. The bill passes eligibility. An `UNPROCESSABLE` bill never reaches the gate.
+2. The bill names a purchase order that exists, is on the active fixture
+   allow-list, and has an eligible status.
+3. Supplier and currency match.
+4. Neither duplicate check fires: no repeated invoice number, no repeated
+   business key.
+5. Every already-paired line agrees on quantity, unit price, line amount, tax
+   type and line tax.
+6. Every already-paired line has account codes that are present, format-valid,
+   known in the recorded chart, and exactly equal.
+7. Header tax and the bill total agree with the purchase order within tolerance.
+8. The bill and the purchase order have the same number of lines.
+9. Exactly one line remains unpaired on each side.
+10. The residual pair agrees on quantity, unit price, line amount, tax type and
+    tax amount.
+11. The residual pair's account codes are present, format-valid, known in the
+    recorded chart, and exactly equal.
+12. Both residual descriptions are non-empty and no longer than 500 characters
+    after normalisation (`MAX_RESIDUAL_DESCRIPTION_CHARS`). An over-long
+    description **fails the gate rather than being truncated**, because
+    truncating changes the thing being compared.
 
-**Numeric agreement on the residual pair is the one that matters.** The
-one-line-each-side conditions make a one-string-against-one-string prompt
-structurally sound. Numeric agreement makes it meaningful. Without it, a residual pair differing on price as well as wording
+Two further checks sit outside the deterministic gate. `SEMANTIC_REVIEW_ENABLED`
+must have been on when the run was reconciled; the captured flag is recorded, so
+a later configuration change cannot reinterpret the run. And immediately before
+the call, `load_eligible_run()` (`policy_service/domain/semantic.py`) re-checks
+the persisted state: the run is still `REVIEW_READY` with outcome
+`REVIEW_REQUIRED`, the stage is `PENDING`, and the recorded gate is open with a
+clean residual pair.
+
+**Numeric agreement on the residual pair is the one that matters.** Condition 9
+makes a one-string-against-one-string prompt structurally sound. Conditions 10
+and 11 make it meaningful. Without them, a residual pair differing on price as well as wording
 would be sent as though wording were the only open question, and a
 `LIKELY_EQUIVALENT` answer would actively mislead the person reading the card.
 This is invariant I26.
@@ -137,17 +157,24 @@ enforced, not where it can be requested.
 
 ## 5. Failure is a designed path, not an exception
 
-Six things can go wrong with a model call. All six land in the same place.
+Eight things can go wrong with a model call. All eight land in the same place.
+Each is recorded as its own review reason (`HumanReviewReason` in
+`policy_service/domain/enums.py`).
 
-| Failure | Result |
-|---|---|
-| Provider unreachable, timeout, rate limit | Run routes to a human. No recommendation shown. |
-| Malformed or unparseable output | Same. |
-| Output valid but fails the strict schema | Same. |
-| Model refuses | Same. |
-| Output truncated | Same. |
-| Confidence below `SEMANTIC_MIN_CONFIDENCE` | Same. |
-| Model returns `INSUFFICIENT_EVIDENCE` | Same, and this is the model working correctly. |
+| Failure | Review reason | Result |
+|---|---|---|
+| Provider does not answer in time | `SEMANTIC_TIMEOUT` | Run routes to a human. No recommendation shown. |
+| Provider unreachable or returns an error status, including rate limits | `SEMANTIC_PROVIDER_UNAVAILABLE` | Same. |
+| Output malformed, or fails the strict schema | `SEMANTIC_OUTPUT_INVALID` | Same. |
+| Evidence is not an exact substring of the supplied descriptions | `SEMANTIC_EVIDENCE_UNSUPPORTED` | Same. |
+| Model refuses | `SEMANTIC_REFUSED` | Same. |
+| Output truncated | `SEMANTIC_TRUNCATED` | Same. |
+| Any other unexpected stop reason | `SEMANTIC_UNEXPECTED_STOP_REASON` | Same. |
+| Confidence below `SEMANTIC_MIN_CONFIDENCE` | `SEMANTIC_LOW_CONFIDENCE` | Same. |
+
+A model that returns `INSUFFICIENT_EVIDENCE` has not failed. That is the model
+working correctly: it is a valid recommendation, recorded and shown on the card
+like the other two values.
 
 The run reaches `COMPLETED_WITHOUT_RECOMMENDATION` and the human sees the case
 with no model output at all, rather than a hedged or partial one. This is
@@ -172,8 +199,8 @@ first:
 3. **Data is delimited, not interpolated.** The two descriptions are serialised as
    JSON inside a `<candidate_pair>` block, and the system prompt states that
    everything inside the block is untrusted data to be compared, not obeyed.
-4. **Normalisation and bounds.** Control characters stripped, whitespace
-   collapsed, length capped by the gate.
+4. **Normalisation and bounds.** Unicode NFKC-normalised, whitespace
+   collapsed, length capped by the gate (condition 12).
 5. **Evidence must be an exact substring** of the supplied description. Injected
    instruction text cannot be dressed up as evidence unless it literally appears
    in the description, in which case it is displayed to a person as the supplier's
