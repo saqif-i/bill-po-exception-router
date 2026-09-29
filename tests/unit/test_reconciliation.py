@@ -569,3 +569,63 @@ def test_a_price_difference_still_outranks_the_total_it_caused():
         route([ExceptionCode.UNIT_PRICE_VARIANCE, ExceptionCode.TOTAL_VARIANCE])
         is TriageDestination.PROCUREMENT
     )
+
+
+# --- the duplicate date bucket ---------------------------------------------
+@pytest.mark.parametrize(
+    ("date_string", "date", "expected"),
+    [
+        ("2026-09-15T00:00:00", "/Date(1789430400000+0000)/", "2026-09-15"),
+        (None, "/Date(1789430400000+0000)/", "2026-09-15"),
+        (None, "2026-09-01", "2026-09-01"),
+        (None, None, None),
+        (None, "not a date", None),
+    ],
+)
+def test_calendar_day_reads_what_xero_actually_sends(date_string, date, expected):
+    from policy_service.domain.normalisation import calendar_day
+
+    assert calendar_day(date_string, date) == expected
+
+
+def test_bills_days_apart_do_not_share_a_date_bucket():
+    """Slicing /Date(...)/ gave "/Date(1789" for every bill in an eleven-day
+    window, so two genuinely different bills could collide as duplicates."""
+    from policy_service.domain.normalisation import calendar_day
+
+    day = 86_400_000
+    first = calendar_day(None, "/Date(1789430400000+0000)/")
+    five_days_later = calendar_day(None, f"/Date({1789430400000 + 5 * day}+0000)/")
+    assert first != five_days_later
+
+
+# --- a currency difference routes on its cause ------------------------------
+def test_a_currency_difference_routes_to_finance_despite_the_price_variances():
+    """A USD bill against an AUD order disagrees on every amount. The price
+    variances are consequences of the currency, not procurement problems."""
+    from policy_service.domain.routing import route
+
+    codes = [
+        ExceptionCode.CURRENCY_MISMATCH,
+        ExceptionCode.UNIT_PRICE_VARIANCE,
+        ExceptionCode.LINE_AMOUNT_VARIANCE,
+        ExceptionCode.TOTAL_VARIANCE,
+    ]
+    assert route(codes) is TriageDestination.FINANCE
+
+
+def test_a_currency_bill_with_converted_prices_reaches_finance_end_to_end():
+    result = run(
+        bill_of([line("w", unit="3.25", amount="32.50")], currency="usd", total="37.50"),
+        po_of([line("w")]),
+    )
+    assert ExceptionCode.CURRENCY_MISMATCH in result.exception_codes
+    assert ExceptionCode.UNIT_PRICE_VARIANCE in result.exception_codes
+    assert result.triage_destination is TriageDestination.FINANCE
+
+
+def test_a_duplicate_still_outranks_a_currency_difference():
+    from policy_service.domain.routing import route
+
+    codes = [ExceptionCode.DUPLICATE_INVOICE_NUMBER, ExceptionCode.CURRENCY_MISMATCH]
+    assert route(codes) is TriageDestination.DUPLICATE_REVIEW

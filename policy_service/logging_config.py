@@ -50,7 +50,7 @@ class JsonFormatter(logging.Formatter):
         payload: dict[str, Any] = {
             "level": record.levelname,
             "logger": record.name,
-            "message": record.getMessage(),
+            "message": redact(record.getMessage()),
         }
 
         extras = {k: v for k, v in record.__dict__.items() if k not in _STANDARD}

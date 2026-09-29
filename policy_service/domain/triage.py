@@ -15,6 +15,7 @@ from policy_service.integrations.slack_blocks import (
     CHANNEL_FOR,
     build_card,
     build_decided_card,
+    escape_mrkdwn,
 )
 
 
@@ -158,7 +159,7 @@ def notify(conn: Connection, *, run_id: uuid.UUID, correlation_id: uuid.UUID, cl
     outcome = client.post_card(
         channel=channel,
         blocks=blocks,
-        text=f"Bill {context.invoice_number} needs review",
+        text=f"Bill {escape_mrkdwn(context.invoice_number)} needs review",
     )
 
     status = (
@@ -325,7 +326,7 @@ def update_card_best_effort(
             decided_at=decided_at,
             destination=context.destination,
         ),
-        text=f"Bill {context.invoice_number} triaged",
+        text=f"Bill {escape_mrkdwn(context.invoice_number)} triaged",
     )
     if outcome.ok:
         with conn.cursor() as cur:

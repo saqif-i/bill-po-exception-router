@@ -23,7 +23,7 @@ from policy_service.domain.ingestion import (
     ingestion_version_key,
 )
 from policy_service.domain.models import Bill, PurchaseOrder, Tolerances
-from policy_service.domain.normalisation import split_bill_reference
+from policy_service.domain.normalisation import calendar_day, split_bill_reference
 from policy_service.domain.reconciliation import reconcile
 from policy_service.integrations.xero_parsing import account_reference_hash
 
@@ -158,7 +158,7 @@ def reconcile_run(
         # different orders must not share a duplicate key just because the
         # supplier number was reused.
         invoice_key = invoice_number_key(contact_id, invoice_number)
-    date_bucket = (bill.date or datetime.now(UTC).date().isoformat())[:10]
+    date_bucket = calendar_day(bill.date_string, bill.date) or datetime.now(UTC).date().isoformat()
     biz_key = business_key(contact_id, bill.total, bill.currency_code, date_bucket, po_reference)
 
     invoice_hit, business_hit = find_duplicate_hits(

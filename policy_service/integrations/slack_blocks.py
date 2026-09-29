@@ -60,6 +60,16 @@ DISCLAIMER = (
 )
 
 
+def escape_mrkdwn(text: str) -> str:
+    """Escape the three characters Slack treats as control sequences.
+
+    Supplier and model text is shown verbatim. Unescaped, a bill line reading
+    `<!channel>` would notify the whole channel, and `<https://x|y>` would
+    render as a disguised link. `&` goes first so the others are not doubled.
+    """
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
 def _section(text: str) -> dict:
     return {"type": "section", "text": {"type": "mrkdwn", "text": text}}
 
@@ -92,14 +102,14 @@ def build_card(
 
     if recommendation is not None:
         spans = "\n".join(
-            f"> {span['text']}  _({span['source'].replace('_', ' ').lower()})_"
+            f"> {escape_mrkdwn(span['text'])}  _({span['source'].replace('_', ' ').lower()})_"
             for span in recommendation["evidence"]
         )
         blocks.append(
             _section(
                 f"*Wording check*  `{recommendation['recommendation']}`  "
                 f"(confidence {recommendation['confidence']:.2f})\n"
-                f"{recommendation['explanation']}\n{spans}"
+                f"{escape_mrkdwn(recommendation['explanation'])}\n{spans}"
             )
         )
         blocks.append(

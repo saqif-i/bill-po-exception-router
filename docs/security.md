@@ -36,12 +36,16 @@ exception code or deterministic result.
 **Slack.** The triage card. It carries the invoice number, exception codes, the
 routing destination and, where one exists, a wording recommendation with its
 evidence spans. Evidence spans are verbatim substrings of the two descriptions,
-so nothing is shown that the supplier did not write.
+so nothing is shown that the supplier did not write. That text, the model's
+explanation and the invoice number have `&`, `<` and `>` escaped before they
+reach Slack, so supplier wording such as `<!channel>` cannot notify a channel
+or disguise a link.
 
 ## Redaction
 
 Applied in the log **formatter**, not at each call site, because a call site
-that forgets is the normal case.
+that forgets is the normal case. The formatted message is scrubbed as well as
+the structured fields, because a caller can put a value straight into it.
 
 Keys matching `password`, `secret`, `token`, `authorization`, `api_key`,
 `credential`, `signature`, `cookie`, `private` or `bearer` have their values

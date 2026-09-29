@@ -127,7 +127,10 @@ grant at the end of `001_core_schema.sql` survived.
 **Symptom.** Runs sit in `REVIEW_READY` with `semantic_stage_status` of
 `IN_PROGRESS`, and no card appears.
 
-**Trigger it.** Kill the service during a semantic call.
+**Trigger it.** Kill the service during a semantic call. An exception during
+the call does not cause this: it is recorded as `SEMANTIC_PROVIDER_UNAVAILABLE`
+and the attempt is finalised. Only a process that dies mid-call leaves a
+`STARTED` row.
 
 **Check.**
 ```sql

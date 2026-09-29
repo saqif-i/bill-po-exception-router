@@ -13,6 +13,7 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
+import httpx
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 
@@ -28,6 +29,7 @@ from policy_service.db import idempotency_store
 from policy_service.db.engine import get_pool
 from policy_service.domain import poller
 from policy_service.domain.models import Bill, PurchaseOrder
+from policy_service.integrations.xero_client import XeroApiError
 
 router = APIRouter(prefix="/runs", tags=["runs"])
 
@@ -160,48 +162,58 @@ def reconcile_run(
             )
         conn.commit()
 
-        with conn.cursor() as cur:
-            cur.execute(
-                "SELECT xero_invoice_id, xero_invoice_number FROM runs WHERE run_id = %s",
-                (run_id,),
+        # Any failure below leaves the run in INGESTED and the key reclaimable.
+        # Without this the claim would stay PROCESSING, and every retry with the
+        # same key would get IN_PROGRESS for good.
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT xero_invoice_id, xero_invoice_number FROM runs WHERE run_id = %s",
+                    (run_id,),
+                )
+                row = cur.fetchone()
+            if row is None:
+                raise ServiceError(code="RUN_NOT_FOUND", status_code=404)
+
+            invoice = client.list_invoices(modified_since=None, max_records=MAX_BILLS_PER_POLL)
+            match = next(
+                (i for i in invoice.get("Invoices", []) if str(i.get("InvoiceID")) == str(row[0])),
+                None,
             )
-            row = cur.fetchone()
-        if row is None:
-            raise ServiceError(code="RUN_NOT_FOUND", status_code=404)
+            if match is None:
+                raise ServiceError(code="BILL_NO_LONGER_AVAILABLE", status_code=409)
 
-        invoice = client.list_invoices(modified_since=None, max_records=MAX_BILLS_PER_POLL)
-        match = next(
-            (i for i in invoice.get("Invoices", []) if str(i.get("InvoiceID")) == str(row[0])),
-            None,
-        )
-        if match is None:
-            raise ServiceError(code="BILL_NO_LONGER_AVAILABLE", status_code=409)
+            bill = Bill.model_validate(match)
+            from policy_service.domain.normalisation import split_bill_reference
 
-        bill = Bill.model_validate(match)
-        from policy_service.domain.normalisation import split_bill_reference
+            reference = split_bill_reference(bill.invoice_number)[1]
+            purchase_order = None
+            if reference:
+                order = client.find_purchase_order(reference)
+                if order is not None:
+                    purchase_order = PurchaseOrder.model_validate(order)
 
-        reference = split_bill_reference(bill.invoice_number)[1]
-        purchase_order = None
-        if reference:
-            try:
-                payload = client.get_purchase_order(reference)
-                orders = payload.get("PurchaseOrders", [])
-                if orders:
-                    purchase_order = PurchaseOrder.model_validate(orders[0])
-            except Exception:
-                purchase_order = None
-
-        summary = poller.reconcile_run(
-            conn,
-            run_id=run_id,
-            correlation_id=correlation_id,
-            bill=bill,
-            purchase_order=purchase_order,
-            chart=client.chart_of_accounts(),
-            semantic_review_enabled=get_settings().semantic_review_enabled,
-        )
-        idempotency_store.complete(conn, claim.ledger_id, status_code=200, summary=summary)
-        conn.commit()
+            summary = poller.reconcile_run(
+                conn,
+                run_id=run_id,
+                correlation_id=correlation_id,
+                bill=bill,
+                purchase_order=purchase_order,
+                chart=client.chart_of_accounts(),
+                semantic_review_enabled=get_settings().semantic_review_enabled,
+            )
+            idempotency_store.complete(conn, claim.ledger_id, status_code=200, summary=summary)
+            conn.commit()
+        except Exception as exc:
+            conn.rollback()
+            with get_pool().connection() as other:
+                idempotency_store.fail(
+                    other, claim.ledger_id, error_class="RETRYABLE", error_code="RECONCILE_FAILED"
+                )
+                other.commit()
+            if isinstance(exc, XeroApiError | httpx.HTTPError):
+                raise ServiceError(code="XERO_UNAVAILABLE", status_code=503) from exc
+            raise
 
     return JSONResponse(status_code=200, content=_body(request, summary))
 

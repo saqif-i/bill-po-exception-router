@@ -59,6 +59,8 @@ class Bill(BaseModel):
     reference: str | None = Field(default=None, alias="Reference")
     currency_code: str | None = Field(default=None, alias="CurrencyCode")
     date: str | None = Field(default=None, alias="Date")
+    # The calendar day as Xero shows it. `Date` arrives as /Date(ms+zzzz)/.
+    date_string: str | None = Field(default=None, alias="DateString")
     contact: Contact | None = Field(default=None, alias="Contact")
     line_items: list[LineItem] = Field(default_factory=list, alias="LineItems")
     total_tax: Money = Field(default=None, alias="TotalTax")

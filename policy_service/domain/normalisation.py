@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 
 # Bounded project format for an account code.
@@ -38,6 +39,8 @@ _WHITESPACE = re.compile(r"\s+")
 # presented as a design.
 PO_REFERENCE_PATTERN = re.compile(r"\bPO-[A-Za-z0-9._/-]+", re.IGNORECASE)
 _NON_ALNUM = re.compile(r"[^a-z0-9]+")
+_ISO_DAY = re.compile(r"^\d{4}-\d{2}-\d{2}")
+_XERO_DATE = re.compile(r"^/Date\((-?\d+)(?:[+-]\d{4})?\)/$")
 
 
 def trim(value: str | None) -> str:
@@ -69,6 +72,24 @@ def normalise_loose(value: str | None) -> str:
     token order is preserved: reordering would be a judgement call.
     """
     return _NON_ALNUM.sub(" ", normalise_strict(value)).strip()
+
+
+def calendar_day(date_string: str | None, date: str | None) -> str | None:
+    """The bill's calendar day as YYYY-MM-DD, or None if neither field has one.
+
+    Xero sends `Date` as /Date(1789430400000+0000)/, so slicing it gives
+    "/Date(1789", which spans about eleven days. `DateString` carries the day
+    directly; failing that, the milliseconds are converted. A plain ISO date is
+    accepted too, because a fixture or a test may supply one.
+    """
+    for value in (date_string, date):
+        if value and _ISO_DAY.match(value):
+            return value[:10]
+    match = _XERO_DATE.match(date or "")
+    if match:
+        millis = int(match.group(1))
+        return datetime.fromtimestamp(millis / 1000, UTC).date().isoformat()
+    return None
 
 
 def canonical_account_code(value: str | None) -> str | None:

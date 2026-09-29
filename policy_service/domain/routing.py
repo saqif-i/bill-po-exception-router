@@ -35,7 +35,6 @@ _PROCUREMENT = frozenset(
 # Finance owns the chart of accounts and tax treatment.
 _FINANCE = frozenset(
     {
-        ExceptionCode.CURRENCY_MISMATCH,
         ExceptionCode.TAX_TYPE_MISMATCH,
         ExceptionCode.MISSING_TAX_TYPE,
         ExceptionCode.LINE_TAX_VARIANCE,
@@ -58,6 +57,12 @@ _FINANCE = frozenset(
         ExceptionCode.RESIDUAL_ACCOUNT_CODE_MISMATCH,
     }
 )
+
+# A currency difference is a cause, not a line problem. Amounts in two
+# currencies disagree on every line, so the price and amount variances it
+# produces are consequences, and routing them to procurement would send a
+# currency question to the team that owns the symptom. Finance owns it.
+_CURRENCY = frozenset({ExceptionCode.CURRENCY_MISMATCH})
 
 _DUPLICATE = frozenset(
     {
@@ -93,6 +98,7 @@ _AP_REVIEW = frozenset(
 # exist at all, a price discussion with the supplier is premature.
 _PRECEDENCE: tuple[tuple[TriageDestination, frozenset[ExceptionCode]], ...] = (
     (TriageDestination.DUPLICATE_REVIEW, _DUPLICATE),
+    (TriageDestination.FINANCE, _CURRENCY),
     (TriageDestination.PROCUREMENT, _PROCUREMENT),
     (TriageDestination.FINANCE, _FINANCE),
     (TriageDestination.AP_REVIEW, _AP_REVIEW),
@@ -121,5 +127,5 @@ def coverage_gaps() -> set[ExceptionCode]:
     """Every exception code must have an owner. A test asserts this is empty,
     so adding a code without routing it fails the build rather than silently
     defaulting to AP_REVIEW."""
-    owned = _PROCUREMENT | _FINANCE | _DUPLICATE | _AP_REVIEW | set(_AGGREGATE)
+    owned = _PROCUREMENT | _FINANCE | _CURRENCY | _DUPLICATE | _AP_REVIEW | set(_AGGREGATE)
     return set(ExceptionCode) - owned

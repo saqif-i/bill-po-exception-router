@@ -219,7 +219,7 @@ def test_the_outcome_is_never_altered_by_a_recommendation():
     ],
 )
 def test_every_failure_reaches_a_human_with_no_recommendation(provider, expected_reason):
-    """I06. Six different failures, one destination."""
+    """I06. Different failures, one destination."""
     with psycopg.connect(OWNER_URL) as conn:
         run_id, _ = _seed_wording_run(conn)
         conn.commit()
@@ -243,6 +243,50 @@ def test_every_failure_reaches_a_human_with_no_recommendation(provider, expected
     assert stage == "COMPLETED_WITHOUT_RECOMMENDATION"
     assert expected_reason in reasons
     assert outcome == "REVIEW_REQUIRED"
+
+
+class ExplodingClient:
+    """A provider call that raises instead of returning, e.g. a non-JSON body."""
+
+    model = "fake-model-1"
+
+    def review(self, **_kwargs):
+        raise ValueError("Expecting value: line 1 column 1 (char 0)")
+
+
+def test_an_exception_during_the_call_still_finalises_the_attempt():
+    """Without this the attempt stays STARTED and the run is stuck at
+    IN_PROGRESS, because notification refuses a non-terminal stage (I31)."""
+    with psycopg.connect(OWNER_URL) as conn:
+        run_id, _ = _seed_wording_run(conn)
+        conn.commit()
+        summary = semantic.review(
+            conn,
+            run_id=run_id,
+            correlation_id=uuid.uuid4(),
+            client=ExplodingClient(),
+            min_confidence=0.6,
+            enabled_flag=True,
+        )
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT semantic_stage_status, human_review_reasons FROM runs WHERE run_id=%s",
+                (run_id,),
+            )
+            stage, reasons = cur.fetchone()
+            cur.execute(
+                "SELECT status, rejection_reason, rejection_detail FROM semantic_attempts "
+                "WHERE run_id=%s",
+                (run_id,),
+            )
+            attempt_status, rejection_reason, detail = cur.fetchone()
+
+    assert summary["recommendation"] is None
+    assert stage == "COMPLETED_WITHOUT_RECOMMENDATION"
+    assert "SEMANTIC_PROVIDER_UNAVAILABLE" in reasons
+    assert attempt_status == "REJECTED"
+    assert rejection_reason == "SEMANTIC_PROVIDER_UNAVAILABLE"
+    assert detail == "unexpected: ValueError"
 
 
 def test_low_confidence_shows_nothing_rather_than_a_hedge():

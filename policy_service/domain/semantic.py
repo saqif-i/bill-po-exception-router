@@ -244,19 +244,27 @@ def review(
     )
     conn.commit()  # the attempt is durable before the call leaves the process
 
-    provider = client.review(
-        purchase_order_line_description=pair.purchase_order_line_description,
-        bill_line_description=pair.bill_line_description,
-    )
-
-    if provider.rejection is not None:
-        outcome = provider.rejection
-    else:
-        outcome = validate(
-            provider.raw,
+    # Anything unexpected here, such as a non-JSON reply, must still finalise
+    # the attempt. Otherwise it stays STARTED, the stage stays IN_PROGRESS, and
+    # notification refuses the run for good (I31). Only the exception type is
+    # kept: its message could quote the response.
+    try:
+        provider = client.review(
             purchase_order_line_description=pair.purchase_order_line_description,
             bill_line_description=pair.bill_line_description,
-            min_confidence=min_confidence,
+        )
+        if provider.rejection is not None:
+            outcome = provider.rejection
+        else:
+            outcome = validate(
+                provider.raw,
+                purchase_order_line_description=pair.purchase_order_line_description,
+                bill_line_description=pair.bill_line_description,
+                min_confidence=min_confidence,
+            )
+    except Exception as exc:
+        outcome = Rejection(
+            RejectionReason.PROVIDER_UNAVAILABLE, f"unexpected: {type(exc).__name__}"
         )
 
     summary = finalise(conn, run_id=run_id, attempt_id=attempt_id, result=outcome)

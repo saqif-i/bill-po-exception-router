@@ -115,6 +115,22 @@ class XeroReadClient:
             {"unitdp": 4},
         )
 
+    def find_purchase_order(self, number: str) -> dict | None:
+        """The purchase order, or None when Xero says it does not exist.
+
+        Only a 404 means "not found". A rate limit, a server error or a rejected
+        credential raises, so a transient failure cannot become a permanent
+        PO_NOT_FOUND on the run.
+        """
+        try:
+            payload = self.get_purchase_order(number)
+        except XeroApiError as exc:
+            if exc.status == 404:
+                return None
+            raise
+        orders = payload.get("PurchaseOrders", [])
+        return orders[0] if orders else None
+
     def list_accounts(self) -> dict:
         return self._get("list_accounts", "/api.xro/2.0/Accounts")
 

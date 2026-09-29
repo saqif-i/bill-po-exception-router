@@ -139,3 +139,11 @@ def test_every_line_is_valid_json() -> None:
         logging.LogRecord("t", logging.INFO, __file__, 1, 'quotes " and \\ backslash', None, None)
     )
     assert json.loads(line)["message"]
+
+
+def test_a_token_in_the_log_message_itself_is_scrubbed() -> None:
+    """The message is formatted by the caller, so a token can land in it
+    directly: logger.info("calling with %s", header)."""
+    out = _format({}, message="calling Slack with xoxb-1234567890-abcdefghijkl")
+    assert "xoxb-1234567890-abcdefghijkl" not in out["message"]
+    assert REDACTED in out["message"]

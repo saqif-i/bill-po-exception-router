@@ -15,6 +15,7 @@ from policy_service.integrations.slack_blocks import (
     ACTIONS_FOR,
     CHANNEL_FOR,
     build_card,
+    escape_mrkdwn,
 )
 
 
@@ -95,3 +96,32 @@ def test_every_card_carries_the_non_approval_disclaimer() -> None:
             human_review_reasons=[],
         )
         assert "does not approve, reject or pay anything" in str(blocks)
+
+
+def test_supplier_and_model_text_cannot_ping_or_disguise_links() -> None:
+    """Evidence is verbatim supplier text. Unescaped, `<!channel>` would notify
+    everyone in the channel."""
+    blocks = build_card(
+        run_id="r1",
+        invoice_number="INV-1008",
+        destination=TriageDestination.AP_REVIEW,
+        exception_codes=["UNPAIRED_LINE"],
+        recommendation={
+            "recommendation": "LIKELY_EQUIVALENT",
+            "confidence": 0.91,
+            "explanation": "See <https://evil.example|the invoice> & <!here>",
+            "evidence": [{"source": "BILL_LINE", "text": "water <!channel>"}],
+        },
+        semantic_gate_reason="RESIDUAL_PAIR_TEXT_ONLY",
+        human_review_reasons=["SEMANTIC_RECOMMENDATION_AVAILABLE"],
+    )
+    rendered = str(blocks)
+    assert "<!channel>" not in rendered
+    assert "<!here>" not in rendered
+    assert "<https://evil.example" not in rendered
+    assert "water &lt;!channel&gt;" in rendered
+    assert "&amp; &lt;!here&gt;" in rendered
+
+
+def test_escaping_does_not_double_escape() -> None:
+    assert escape_mrkdwn("a & b < c > d") == "a &amp; b &lt; c &gt; d"

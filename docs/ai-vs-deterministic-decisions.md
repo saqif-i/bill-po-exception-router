@@ -165,7 +165,7 @@ Each is recorded as its own review reason (`HumanReviewReason` in
 | Failure | Review reason | Result |
 |---|---|---|
 | Provider does not answer in time | `SEMANTIC_TIMEOUT` | Run routes to a human. No recommendation shown. |
-| Provider unreachable or returns an error status, including rate limits | `SEMANTIC_PROVIDER_UNAVAILABLE` | Same. |
+| Provider unreachable or returns an error status, including rate limits, or the call fails in any other unexpected way | `SEMANTIC_PROVIDER_UNAVAILABLE` | Same. |
 | Output malformed, or fails the strict schema | `SEMANTIC_OUTPUT_INVALID` | Same. |
 | Evidence is not an exact substring of the supplied descriptions | `SEMANTIC_EVIDENCE_UNSUPPORTED` | Same. |
 | Model refuses | `SEMANTIC_REFUSED` | Same. |
