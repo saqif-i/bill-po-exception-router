@@ -162,3 +162,32 @@ def test_the_error_workflow_ends_by_alerting_someone() -> None:
     assert nodes[last]["type"] == "n8n-nodes-base.httpRequest"
     assert parameters["url"].endswith("/alerts")
     assert any(h["name"] == "Idempotency-Key" for h in parameters["headerParameters"]["parameters"])
+
+
+def test_every_failure_in_bill_processing_names_its_run() -> None:
+    """Without it, an alert said a bill failed but not which one."""
+    workflow = json.loads((REPO / "n8n" / "workflows" / "02-bill-processing.json").read_text())
+    for node in workflow["nodes"]:
+        if node["type"] == "n8n-nodes-base.stopAndError":
+            message = node["parameters"]["errorMessage"]
+            assert "$('Execution Input').item.json.run_id" in message, node["name"]
+
+
+def test_the_alert_retries_and_its_key_survives_an_n8n_reset() -> None:
+    workflow = json.loads((REPO / "n8n" / "workflows" / "03-error-handler.json").read_text())
+    (alert,) = [n for n in workflow["nodes"] if n["name"] == "Alert"]
+    assert alert["retryOnFail"] is True and alert["maxTries"] >= 2
+    (key,) = [
+        h["value"]
+        for h in alert["parameters"]["headerParameters"]["parameters"]
+        if h["name"] == "Idempotency-Key"
+    ]
+    # Execution ids restart from 1 if n8n's database is reset; the time does not.
+    assert "failed_at" in key
+
+
+def test_no_export_carries_pinned_data() -> None:
+    """Pinned output is one instance's run ids and responses, and n8n replays it
+    instead of calling the service on a manual run."""
+    for path in sorted((REPO / "n8n" / "workflows").glob("*.json")):
+        assert not json.loads(path.read_text()).get("pinData"), path.name

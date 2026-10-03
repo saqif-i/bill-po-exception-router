@@ -252,7 +252,7 @@
     },
     {
       "parameters": {
-        "errorMessage": "=reconcile failed: {{ $json.statusCode }} {{ $json.body.error }}"
+        "errorMessage": "=reconcile failed for run {{ $('Execution Input').item.json.run_id }}: {{ $json.statusCode }} {{ $json.body.error }}"
       },
       "type": "n8n-nodes-base.stopAndError",
       "typeVersion": 1,
@@ -298,7 +298,7 @@
     },
     {
       "parameters": {
-        "errorMessage": "=semantic review failed: {{ $json.statusCode }} {{ $json.body.error }}"
+        "errorMessage": "=semantic review failed for run {{ $('Execution Input').item.json.run_id }}: {{ $json.statusCode }} {{ $json.body.error }}"
       },
       "type": "n8n-nodes-base.stopAndError",
       "typeVersion": 1,
@@ -365,7 +365,7 @@
     },
     {
       "parameters": {
-        "errorMessage": "=notify failed: {{ $json.statusCode }} {{ $json.body.error }}"
+        "errorMessage": "=notify failed for run {{ $('Execution Input').item.json.run_id }}: {{ $json.statusCode }} {{ $json.body.error }}"
       },
       "type": "n8n-nodes-base.stopAndError",
       "typeVersion": 1,
@@ -377,50 +377,7 @@
       "id": "67b129b7-a5cb-4688-9375-3f4becb3b1a4"
     }
   ],
-  "pinData": {
-    "Execution Input": [
-      {
-        "json": {
-          "run_id": "5f955204-e0b3-465c-94a0-a620f38612b0"
-        },
-        "pairedItem": {
-          "item": 0
-        }
-      }
-    ],
-    "Reconcile": [
-      {
-        "json": {
-          "body": {
-            "run_id": "5f955204-e0b3-465c-94a0-a620f38612b0",
-            "result_id": "45c93af6-3503-4a0b-a22d-1f6096890db1",
-            "outcome": "REVIEW_REQUIRED",
-            "exception_codes": [
-              "UNPAIRED_LINE"
-            ],
-            "triage_destination": "AP_REVIEW",
-            "semantic_permitted": true,
-            "semantic_gate_reason": "RESIDUAL_PAIR_TEXT_ONLY",
-            "semantic_stage_status": "PENDING",
-            "correlation_id": "d8574a11-2f7e-421e-be17-7ec1663b6505"
-          },
-          "headers": {
-            "date": "Thu, 17 Sep 2026 03:42:06 GMT",
-            "server": "uvicorn",
-            "content-length": "362",
-            "content-type": "application/json",
-            "x-correlation-id": "d8574a11-2f7e-421e-be17-7ec1663b6505",
-            "connection": "close"
-          },
-          "statusCode": 200,
-          "statusMessage": "OK"
-        },
-        "pairedItem": {
-          "item": 0
-        }
-      }
-    ]
-  },
+  "pinData": {},
   "connections": {
     "Execution Input": {
       "main": [

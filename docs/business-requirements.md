@@ -169,7 +169,9 @@ The system therefore has a fixed authority boundary:
 
 The Slack controls are named for what they are: mark reviewed, send to finance,
 send to procurement, request more information, escalate, close as duplicate. None
-is named approve or reject, because none of them is.
+is named approve or reject, because none of them is. Send to finance and send to
+procurement hand the case to that team, on a new card in its channel, and that
+team's decision closes it (ADR-009).
 
 **This boundary is the requirement most likely to be questioned and the one least
 open to negotiation.** If it is relaxed, the system stops being a triage tool and
@@ -216,7 +218,7 @@ Recorded so that the absences read as decisions. Full reasoning in
 | BR-2 | `ExceptionCode` in `policy_service/domain/enums.py`, mirrored by the CHECK constraint in `migrations/003_reconciliation.sql` |
 | BR-3 | `policy_service/domain/routing.py` |
 | BR-4 | The invocation gate in `reconcile()`; the bounded contract in `policy_service/integrations/claude_contract.py` and `schemas/` |
-| BR-5 | Runs and decisions in `migrations/001_core_schema.sql` and `005_triage_and_slack.sql`; Slack decision capture in `policy_service/api/slack.py` and `policy_service/domain/triage.py` |
+| BR-5 | Runs and decisions in `migrations/001_core_schema.sql`, `005_triage_and_slack.sql` and `005b_triage_handoff.sql`; Slack decision capture in `policy_service/api/slack.py` and `policy_service/domain/triage.py` |
 | BR-6 | `n8n/workflows/03-error-handler.json`, the failed-runs query and stuck-run warning in `scripts/capture_metrics.py`, and `docs/runbook.md` |
 | Section 6 boundary | Invariants I01, I02, I03, I05, I06, I26, I27. See `docs/invariant-register-v1.md`. |
 

@@ -96,6 +96,7 @@ cp .env.example .env        # fill every <<PLACEHOLDER>>
 make lock                   # compile pinned, hashed lock files
 make up                     # postgres, the service, n8n
 make migrate
+make seed-fixtures          # the allow-list: captured bills and purchase orders
 make gate                   # lint, tests, db boundary, secret scan
 ```
 
@@ -144,7 +145,7 @@ attributed to a model change, a prompt change, or neither.
 | [`docs/runbook.md`](docs/runbook.md) | Failures, each deliberately triggered |
 | [`docs/limitations-and-roadmap.md`](docs/limitations-and-roadmap.md) | What this does not do, and why |
 | [`docs/platform-mapping.md`](docs/platform-mapping.md) | What would change on SnapLogic or Tray |
-| [`DECISIONS.md`](DECISIONS.md) | Eight decisions, with the alternatives rejected |
+| [`DECISIONS.md`](DECISIONS.md) | Nine decisions, with the alternatives rejected |
 
 ## What it deliberately does not do
 

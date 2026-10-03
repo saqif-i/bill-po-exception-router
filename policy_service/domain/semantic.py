@@ -10,6 +10,7 @@ have moved.
 
 from __future__ import annotations
 
+import logging
 import uuid
 from dataclasses import dataclass
 from datetime import timedelta
@@ -244,6 +245,10 @@ def abandon_stale_attempts(
 
     A result that arrives after this affects zero rows (I32). SKIP LOCKED leaves
     any attempt another transaction is finalising right now to that transaction.
+
+    Each attempt is finalised in its own savepoint. One that cannot be finalised
+    is logged and skipped, and is tried again next poll: it must not fail the
+    poll it runs in, or one bad attempt would stop every bill from coming in.
     """
     with conn.cursor() as cur:
         cur.execute(
@@ -255,12 +260,23 @@ def abandon_stale_attempts(
         stale = cur.fetchall()
     recovered = []
     for attempt_id, run_id in stale:
-        summary = finalise(
-            conn,
-            run_id=run_id,
-            attempt_id=attempt_id,
-            result=Rejection(RejectionReason.PROVIDER_UNAVAILABLE, "abandoned: no result recorded"),
-        )
+        try:
+            with conn.transaction():
+                summary = finalise(
+                    conn,
+                    run_id=run_id,
+                    attempt_id=attempt_id,
+                    result=Rejection(
+                        RejectionReason.PROVIDER_UNAVAILABLE, "abandoned: no result recorded"
+                    ),
+                )
+        except Exception:
+            logging.getLogger(__name__).warning(
+                "stale semantic attempt could not be finalised; skipped",
+                extra={"attempt_id": str(attempt_id), "run_id": str(run_id)},
+                exc_info=True,
+            )
+            continue
         if summary["applied"]:
             recovered.append(run_id)
     return recovered

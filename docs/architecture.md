@@ -29,7 +29,9 @@ n8n schedule, every few minutes
                                        └─ Slack card -> AWAITING_TRIAGE
                                             └─ POST /slack/interactions
                                                   └─ decision  [one transaction]
-                                                       -> COMPLETED
+                                                       ├─ final     -> COMPLETED
+                                                       └─ hand-off  -> REVIEW_READY,
+                                                          new destination, new card
 ```
 
 ## Components
@@ -74,6 +76,11 @@ rather than a second workflow status.
 checks it, claims it and commits before calling Slack, so no lock or transaction
 spans the call, and a second notify is refused by the claim. A post that does
 not succeed returns the run to `REVIEW_READY` for a retry.
+
+"Send to finance" and "Send to procurement" are hand-offs (ADR-009). The run
+returns to `REVIEW_READY` with the new destination, notify posts that team's
+card, and that team's decision closes the run. One final decision per run; any
+number of hand-offs before it.
 
 ## What is not here
 

@@ -197,7 +197,7 @@ def test_a_decision_records_what_the_person_was_shown():
         result = triage.record_decision(
             conn,
             run_id=run_id,
-            action=TriageAction.SEND_TO_PROCUREMENT,
+            action=TriageAction.ESCALATE,
             user_id="U123",
             user_name="saqif",
             interaction_id=f"i-{uuid.uuid4()}",
@@ -216,7 +216,7 @@ def test_a_decision_records_what_the_person_was_shown():
             status = cur.fetchone()[0]
 
     assert result["recorded"] is True
-    assert action == "SEND_TO_PROCUREMENT"
+    assert action == "ESCALATE"  # a control the procurement card offers
     assert by == "U123"
     assert "QUANTITY_VARIANCE" in codes
     assert destination == "PROCUREMENT"
@@ -502,3 +502,235 @@ def test_the_card_update_is_made_with_no_transaction_open():
 
     assert updated is True
     assert client.transaction_during_update == TransactionStatus.IDLE
+
+
+def _backdate(conn, run_id, minutes):
+    with conn.cursor() as cur:
+        cur.execute(
+            "UPDATE runs SET updated_at = now() - make_interval(mins => %s) WHERE run_id = %s",
+            (minutes, run_id),
+        )
+    conn.commit()
+
+
+def test_a_review_case_with_no_card_is_found_for_resending():
+    """A run whose workflow 02 failed after reconciliation was never picked up
+    again, including one already recovered by the stale-attempt cleanup."""
+    from policy_service.domain.poller import runs_awaiting_a_card
+
+    with psycopg.connect(OWNER_URL) as conn:
+        waiting = _seed(conn)
+        conn.commit()
+        _backdate(conn, waiting, 16)
+
+        recent = _seed(conn)
+        conn.commit()
+
+        posted = _seed(conn)
+        conn.commit()
+        triage.notify(conn, run_id=posted, correlation_id=uuid.uuid4(), client=FakeSlack())
+        conn.commit()
+
+        found = runs_awaiting_a_card(conn, limit=100_000)
+
+    assert waiting in found
+    assert recent not in found
+    assert posted not in found
+
+
+# --- hand-off: "Send to finance" moves the case, it does not close it ---------
+AP_TS = "1700000000.000100"
+FINANCE_TS = "1700000001.000200"
+
+
+def _seed_ap_review(conn):
+    """Every number agrees and only the wording differs: routed to AP review."""
+    run_id = _seed(conn, bill_over={"Description": "Ergonomic mesh task chairs"})
+    conn.commit()
+    return run_id
+
+
+def _decide(conn, run_id, action, message_ts, user="U123"):
+    result = triage.record_decision(
+        conn,
+        run_id=run_id,
+        action=action,
+        user_id=user,
+        user_name=None,
+        interaction_id=f"i-{uuid.uuid4()}",
+        message_ts=message_ts,
+    )
+    conn.commit()
+    return result
+
+
+def _run(conn, run_id):
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT workflow_status, triage_destination FROM runs WHERE run_id = %s", (run_id,)
+        )
+        return cur.fetchone()
+
+
+def test_send_to_finance_hands_the_case_to_finance_whose_decision_closes_it():
+    with psycopg.connect(OWNER_URL) as conn:
+        run_id = _seed_ap_review(conn)
+        ap = FakeSlack(post_result=PostOutcome(True, message_ts=AP_TS, channel_id="C-AP"))
+        triage.notify(conn, run_id=run_id, correlation_id=uuid.uuid4(), client=ap)
+        conn.commit()
+
+        handed = _decide(conn, run_id, TriageAction.SEND_TO_FINANCE, AP_TS)
+        after_handoff = _run(conn, run_id)
+
+        finance = FakeSlack(
+            post_result=PostOutcome(True, message_ts=FINANCE_TS, channel_id="C-FIN")
+        )
+        posted = triage.notify(conn, run_id=run_id, correlation_id=uuid.uuid4(), client=finance)
+        conn.commit()
+        after_card = _run(conn, run_id)
+
+        final = _decide(conn, run_id, TriageAction.MARK_REVIEWED, FINANCE_TS, user="U999")
+        after_final = _run(conn, run_id)
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT action, decided_by, shown_destination, is_final FROM triage_decisions "
+                "WHERE run_id = %s ORDER BY decided_at",
+                (run_id,),
+            )
+            decisions = cur.fetchall()
+
+    assert ap.posts[0]["channel"] == "ap-review"
+    assert handed["recorded"] is True and handed["handoff_to"].value == "FINANCE"
+    assert after_handoff == ("REVIEW_READY", "FINANCE")
+    assert posted["posted"] is True and posted["channel"] == "ap-finance"
+    card = str(finance.posts[0]["blocks"])
+    assert "Sent here from ap review by <@U123>" in card
+    assert "SEND_TO_PROCUREMENT" not in card  # finance's own controls
+    assert after_card == ("AWAITING_TRIAGE", "FINANCE")
+    assert final["recorded"] is True and final["handoff_to"] is None
+    assert after_final == ("COMPLETED", "FINANCE")
+    assert decisions == [
+        ("SEND_TO_FINANCE", "U123", "AP_REVIEW", False),
+        ("MARK_REVIEWED", "U999", "FINANCE", True),
+    ]
+
+
+def test_a_click_on_the_card_a_hand_off_replaced_is_refused():
+    """The AP card is no longer where the case is."""
+    with psycopg.connect(OWNER_URL) as conn:
+        run_id = _seed_ap_review(conn)
+        triage.notify(
+            conn,
+            run_id=run_id,
+            correlation_id=uuid.uuid4(),
+            client=FakeSlack(post_result=PostOutcome(True, message_ts=AP_TS)),
+        )
+        conn.commit()
+        _decide(conn, run_id, TriageAction.SEND_TO_FINANCE, AP_TS)
+        triage.notify(
+            conn,
+            run_id=run_id,
+            correlation_id=uuid.uuid4(),
+            client=FakeSlack(post_result=PostOutcome(True, message_ts=FINANCE_TS)),
+        )
+        conn.commit()
+        with pytest.raises(triage.DecisionRefusedError, match="CARD_SUPERSEDED"):
+            _decide(conn, run_id, TriageAction.MARK_REVIEWED, AP_TS)
+
+
+def test_a_control_the_current_team_is_not_offered_is_refused():
+    with psycopg.connect(OWNER_URL) as conn:
+        run_id = _seed_ap_review(conn)
+        triage.notify(
+            conn,
+            run_id=run_id,
+            correlation_id=uuid.uuid4(),
+            client=FakeSlack(post_result=PostOutcome(True, message_ts=AP_TS)),
+        )
+        conn.commit()
+        _decide(conn, run_id, TriageAction.SEND_TO_FINANCE, AP_TS)
+        triage.notify(
+            conn,
+            run_id=run_id,
+            correlation_id=uuid.uuid4(),
+            client=FakeSlack(post_result=PostOutcome(True, message_ts=FINANCE_TS)),
+        )
+        conn.commit()
+        with pytest.raises(triage.DecisionRefusedError, match="ACTION_NOT_OFFERED_FOR_FINANCE"):
+            _decide(conn, run_id, TriageAction.SEND_TO_PROCUREMENT, FINANCE_TS)
+
+
+def test_the_schema_allows_one_final_decision_and_never_a_final_hand_off():
+    from psycopg import errors
+
+    with psycopg.connect(OWNER_URL) as conn:
+        run_id = _seed_ap_review(conn)
+
+        def insert(action, is_final):
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO triage_decisions (decision_id, run_id, correlation_id, action, "
+                    "decided_by, shown_exception_codes, shown_destination, shown_gate_reason, "
+                    "slack_interaction_id, is_final) VALUES (%s, %s, %s, %s, 'U1', '{}', "
+                    "'AP_REVIEW', 'X', %s, %s)",
+                    (uuid.uuid4(), run_id, uuid.uuid4(), action, f"i-{uuid.uuid4()}", is_final),
+                )
+
+        insert("SEND_TO_FINANCE", False)
+        insert("MARK_REVIEWED", True)
+        conn.commit()
+        with pytest.raises(errors.UniqueViolation):
+            insert("ESCALATE", True)
+        conn.rollback()
+        with pytest.raises(errors.CheckViolation):
+            insert("SEND_TO_PROCUREMENT", True)
+        conn.rollback()
+
+
+def test_after_a_hand_off_the_decision_updates_the_new_card_in_its_own_channel():
+    """The card record kept the AP channel beside the finance card's timestamp,
+    so the update after finance's decision edited nothing and left the finance
+    card's buttons live."""
+    with psycopg.connect(OWNER_URL) as conn:
+        run_id = _seed_ap_review(conn)
+        triage.notify(
+            conn,
+            run_id=run_id,
+            correlation_id=uuid.uuid4(),
+            client=FakeSlack(post_result=PostOutcome(True, message_ts=AP_TS, channel_id="C-AP")),
+        )
+        conn.commit()
+        _decide(conn, run_id, TriageAction.SEND_TO_FINANCE, AP_TS)
+        triage.notify(
+            conn,
+            run_id=run_id,
+            correlation_id=uuid.uuid4(),
+            client=FakeSlack(
+                post_result=PostOutcome(True, message_ts=FINANCE_TS, channel_id="C-FIN")
+            ),
+        )
+        conn.commit()
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT channel, destination, message_ts, card_updated_at "
+                "FROM slack_notifications WHERE run_id = %s",
+                (run_id,),
+            )
+            record = cur.fetchone()
+
+        final = _decide(conn, run_id, TriageAction.MARK_REVIEWED, FINANCE_TS)
+        slack = FakeSlack()
+        updated = triage.update_card_best_effort(
+            conn,
+            run_id=run_id,
+            context=final["context"],
+            action=TriageAction.MARK_REVIEWED,
+            user_id="U123",
+            decided_at="now",
+            client=slack,
+        )
+        conn.commit()
+
+    assert record == ("C-FIN", "FINANCE", FINANCE_TS, None)
+    assert updated is True
+    assert (slack.updates[0]["channel"], slack.updates[0]["message_ts"]) == ("C-FIN", FINANCE_TS)

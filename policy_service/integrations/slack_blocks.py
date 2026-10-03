@@ -87,8 +87,12 @@ def build_card(
     recommendation: dict | None,
     semantic_gate_reason: str,
     human_review_reasons: list[str],
+    handed_over: dict | None = None,
 ) -> list[dict]:
     """The card a reviewer sees.
+
+    `handed_over` ({"by": user id, "from": destination}) is set when another
+    team handed the case here, and the card says who sent it and from where.
 
     `recommendation` is None whenever the model was not consulted OR its output
     was rejected. In both cases the card shows nothing rather than a hedge
@@ -103,6 +107,19 @@ def build_card(
         _section(f"*Exceptions*\n{codes}"),
         _section(f"*Routed to*  {destination.value.replace('_', ' ').lower()}"),
     ]
+    if handed_over is not None:
+        source = handed_over["from"].value.replace("_", " ").lower()
+        blocks.append(
+            {
+                "type": "context",
+                "elements": [
+                    {
+                        "type": "mrkdwn",
+                        "text": f"Sent here from {source} by <@{handed_over['by']}>.",
+                    }
+                ],
+            }
+        )
 
     if recommendation is not None:
         spans = "\n".join(
@@ -183,9 +200,13 @@ def build_decided_card(
     action: TriageAction,
     decided_by: str,
     decided_at: str,
-    destination: TriageDestination,
+    handed_to: TriageDestination | None = None,
 ) -> list[dict]:
     """The card after a decision, replacing the buttons.
+
+    For a hand-off it says where the case went, because the case continues on a
+    new card in that team's channel. For a final decision it says only what was
+    decided: the case is closed.
 
     Best effort (ADR-007). The database is authoritative and this is a view; a
     lost response can leave it stale while the decision is correctly recorded.
@@ -196,9 +217,12 @@ def build_decided_card(
             "text": {"type": "plain_text", "text": f"Bill {invoice_number} triaged"},
         },
         _section(
-            f"*{ACTION_LABELS[action]}*\n"
-            f"by <@{decided_by}> at {decided_at}\n"
-            f"was routed to {destination.value.replace('_', ' ').lower()}"
+            f"*{ACTION_LABELS[action]}*\nby <@{decided_by}> at {decided_at}"
+            + (
+                f"\nIt is now with {handed_to.value.replace('_', ' ').lower()}."
+                if handed_to is not None
+                else ""
+            )
         ),
         {"type": "context", "elements": [{"type": "mrkdwn", "text": DISCLAIMER}]},
     ]

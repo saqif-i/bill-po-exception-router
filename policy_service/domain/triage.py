@@ -12,6 +12,7 @@ from psycopg import Connection
 
 from policy_service.domain.enums import TriageAction, TriageDestination
 from policy_service.integrations.slack_blocks import (
+    ACTIONS_FOR,
     CHANNEL_FOR,
     build_card,
     build_decided_card,
@@ -28,6 +29,14 @@ class DecisionRefusedError(RuntimeError):
     """The interaction cannot become a decision."""
 
 
+# The actions that hand a case to another team instead of closing it. The
+# team's new card carries its own controls, and its decision closes the run.
+HANDOFFS: dict[TriageAction, TriageDestination] = {
+    TriageAction.SEND_TO_FINANCE: TriageDestination.FINANCE,
+    TriageAction.SEND_TO_PROCUREMENT: TriageDestination.PROCUREMENT,
+}
+
+
 @dataclass
 class CardContext:
     run_id: uuid.UUID
@@ -37,6 +46,8 @@ class CardContext:
     recommendation: dict | None
     semantic_gate_reason: str
     human_review_reasons: list[str]
+    # Who handed the case to this destination, if anyone: the latest hand-off.
+    handed_over: dict | None = None
 
 
 def load_card_context(
@@ -109,6 +120,13 @@ def load_card_context(
                     "evidence": found[3],
                 }
 
+        cur.execute(
+            "SELECT decided_by, shown_destination FROM triage_decisions "
+            "WHERE run_id = %s AND NOT is_final ORDER BY decided_at DESC LIMIT 1",
+            (run_id,),
+        )
+        handoff = cur.fetchone()
+
     return CardContext(
         run_id=run_id,
         invoice_number=number,
@@ -117,7 +135,25 @@ def load_card_context(
         recommendation=recommendation,
         semantic_gate_reason=gate_reason,
         human_review_reasons=list(reasons),
+        handed_over=(
+            {"by": handoff[0], "from": TriageDestination(handoff[1])} if handoff else None
+        ),
     )
+
+
+def awaits_card(conn: Connection, run_id: uuid.UUID) -> bool:
+    """True when the run is ready for a card that its current destination has
+    not been sent: after a hand-off, the card on record is the previous team's."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT r.workflow_status, r.triage_destination, n.post_status, n.destination "
+            "FROM runs r LEFT JOIN slack_notifications n USING (run_id) WHERE r.run_id = %s",
+            (run_id,),
+        )
+        row = cur.fetchone()
+    if row is None or row[0] != "REVIEW_READY":
+        return False
+    return not (row[2] == "POSTED" and row[3] == row[1])
 
 
 def load_for_notification(conn: Connection, run_id: uuid.UUID) -> CardContext:
@@ -151,11 +187,14 @@ def notify(conn: Connection, *, run_id: uuid.UUID, correlation_id: uuid.UUID, cl
     """
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT message_ts, post_status FROM slack_notifications WHERE run_id = %s",
+            "SELECT n.message_ts, n.post_status, n.destination, r.triage_destination "
+            "FROM runs r LEFT JOIN slack_notifications n USING (run_id) WHERE r.run_id = %s",
             (run_id,),
         )
         existing = cur.fetchone()
-    if existing is not None and existing[1] == "POSTED":
+    # Posted for the run's current destination. After a hand-off the card on
+    # record is the previous team's, so the new team's card is still owed.
+    if existing is not None and existing[1] == "POSTED" and existing[2] == existing[3]:
         return {"posted": False, "already": True, "message_ts": existing[0]}
 
     context = load_for_notification(conn, run_id)
@@ -176,6 +215,7 @@ def notify(conn: Connection, *, run_id: uuid.UUID, correlation_id: uuid.UUID, cl
         recommendation=context.recommendation,
         semantic_gate_reason=context.semantic_gate_reason,
         human_review_reasons=context.human_review_reasons,
+        handed_over=context.handed_over,
     )
     try:
         outcome = client.post_card(
@@ -198,9 +238,12 @@ def notify(conn: Connection, *, run_id: uuid.UUID, correlation_id: uuid.UUID, cl
                 channel, destination, message_ts, post_status, post_error)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (run_id) DO UPDATE
-               SET message_ts = EXCLUDED.message_ts,
+               SET channel = EXCLUDED.channel,
+                   destination = EXCLUDED.destination,
+                   message_ts = EXCLUDED.message_ts,
                    post_status = EXCLUDED.post_status,
-                   post_error = EXCLUDED.post_error
+                   post_error = EXCLUDED.post_error,
+                   card_updated_at = NULL
             """,
             (
                 uuid.uuid4(),
@@ -214,6 +257,12 @@ def notify(conn: Connection, *, run_id: uuid.UUID, correlation_id: uuid.UUID, cl
                 #
                 # Falls back to the name so a failed post still records where it
                 # was aimed.
+                #
+                # On a second card for the run (after a hand-off) every field is
+                # replaced, channel included. Keeping the first card's channel
+                # paired the new card's timestamp with the old channel, so the
+                # update after the decision edited nothing and left the new
+                # card's buttons live.
                 outcome.channel_id or channel,
                 context.destination.value,
                 outcome.message_ts,
@@ -252,6 +301,15 @@ def record_decision(
     original transaction has no subject in this build, but the ordering that
     matters is unchanged. Acknowledging first and writing afterwards would mean
     a crash between them loses a decision a person believes they made.
+
+    A hand-off (HANDOFFS) is recorded the same way but does not close the run:
+    the run moves to the new destination and back to REVIEW_READY, so notify
+    posts that team's card, and that team's decision closes it. The result
+    carries `handoff_to` so the caller can post the card at once.
+
+    Only the current card's controls count. A click on a card a hand-off has
+    replaced, or on a control the current destination does not offer, is
+    refused: that card is no longer where the case is.
     """
     # The retry check comes FIRST, before any state check. The first delivery
     # moved the run to COMPLETED, so a retry would otherwise be refused as a
@@ -269,16 +327,24 @@ def record_decision(
     context = load_card_context(
         conn, run_id, allowed_statuses=("AWAITING_TRIAGE", "NOTIFY_PENDING", "REVIEW_READY")
     )
+    if action not in ACTIONS_FOR[context.destination]:
+        raise DecisionRefusedError(f"ACTION_NOT_OFFERED_FOR_{context.destination.value}")
+    with conn.cursor() as cur:
+        cur.execute("SELECT message_ts FROM slack_notifications WHERE run_id = %s", (run_id,))
+        card = cur.fetchone()
+    if card is not None and card[0] and message_ts and card[0] != message_ts:
+        raise DecisionRefusedError("CARD_SUPERSEDED")
 
+    handoff_to = HANDOFFS.get(action)
     with conn.cursor() as cur:
         cur.execute(
             """
             INSERT INTO triage_decisions (decision_id, run_id, correlation_id,
                 action, decided_by, decided_by_name, shown_exception_codes,
                 shown_destination, shown_recommendation, shown_confidence,
-                shown_gate_reason, slack_message_ts, slack_interaction_id)
+                shown_gate_reason, slack_message_ts, slack_interaction_id, is_final)
             VALUES (%s, %s, (SELECT correlation_id FROM runs WHERE run_id = %s),
-                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (slack_interaction_id) DO NOTHING
             RETURNING decision_id
             """,
@@ -296,6 +362,7 @@ def record_decision(
                 context.semantic_gate_reason,
                 message_ts,
                 interaction_id,
+                handoff_to is None,
             ),
         )
         row = cur.fetchone()
@@ -303,23 +370,77 @@ def record_decision(
             # Slack retried a delivery it believed failed. Not an error.
             return {"recorded": False, "reason": "ALREADY_RECORDED", "context": context}
 
-        cur.execute(
-            "UPDATE runs SET workflow_status = 'COMPLETED', updated_at = now() "
-            "WHERE run_id = %s "
-            "AND workflow_status IN ('AWAITING_TRIAGE', 'NOTIFY_PENDING', 'REVIEW_READY')",
-            (run_id,),
-        )
+        if handoff_to is None:
+            cur.execute(
+                "UPDATE runs SET workflow_status = 'COMPLETED', updated_at = now() "
+                "WHERE run_id = %s "
+                "AND workflow_status IN ('AWAITING_TRIAGE', 'NOTIFY_PENDING', 'REVIEW_READY')",
+                (run_id,),
+            )
+        else:
+            cur.execute(
+                "UPDATE runs SET triage_destination = %s, workflow_status = 'REVIEW_READY', "
+                "updated_at = now() WHERE run_id = %s "
+                "AND workflow_status IN ('AWAITING_TRIAGE', 'NOTIFY_PENDING', 'REVIEW_READY')",
+                (handoff_to.value, run_id),
+            )
         cur.execute(
             """
             INSERT INTO integration_events (event_id, correlation_id, run_id,
                 event_type, event_status, source, occurred_at)
             VALUES (%s, (SELECT correlation_id FROM runs WHERE run_id = %s), %s,
-                    'TRIAGE_DECISION_RECORDED', 'SUCCEEDED', 'SLACK_INBOUND', now())
+                    %s, 'SUCCEEDED', 'SLACK_INBOUND', now())
             """,
-            (uuid.uuid4(), run_id, run_id),
+            (
+                uuid.uuid4(),
+                run_id,
+                run_id,
+                "TRIAGE_DECISION_RECORDED" if handoff_to is None else "TRIAGE_HANDOFF_RECORDED",
+            ),
         )
 
-    return {"recorded": True, "decision_id": str(row[0]), "context": context}
+    return {
+        "recorded": True,
+        "decision_id": str(row[0]),
+        "context": context,
+        "handoff_to": handoff_to,
+    }
+
+
+def refresh_decided_card(
+    conn: Connection, *, run_id: uuid.UUID, channel: str | None, message_ts: str | None, client
+) -> bool:
+    """Show the recorded final decision on a card someone clicked after it.
+
+    A card keeps its buttons when the update after the decision was lost
+    (ADR-007), and each click on it would be refused. The clicked card is
+    updated from the final decision instead, so it stops offering a choice that
+    has already been made. Best effort, like every card update.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT d.action, d.decided_by, d.decided_at, r.xero_invoice_number "
+            "FROM triage_decisions d JOIN runs r USING (run_id) "
+            "WHERE d.run_id = %s AND d.is_final",
+            (run_id,),
+        )
+        decided = cur.fetchone()
+    conn.commit()  # I12: the read is not held open across the Slack call
+    if decided is None or not channel or not message_ts:
+        return False
+    action, decided_by, decided_at, number = decided
+    outcome = client.update_card(
+        channel=channel,
+        message_ts=message_ts,
+        blocks=build_decided_card(
+            invoice_number=number,
+            action=TriageAction(action),
+            decided_by=decided_by,
+            decided_at=decided_at.strftime("%d %b %Y, %H:%M UTC"),
+        ),
+        text=f"Bill {escape_mrkdwn(number)} triaged",
+    )
+    return outcome.ok
 
 
 def update_card_best_effort(
@@ -355,7 +476,7 @@ def update_card_best_effort(
             action=action,
             decided_by=user_id,
             decided_at=decided_at,
-            destination=context.destination,
+            handed_to=HANDOFFS.get(action),
         ),
         text=f"Bill {escape_mrkdwn(context.invoice_number)} triaged",
     )

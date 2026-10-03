@@ -34,7 +34,8 @@ as `skipped_unchanged`.
 
 That is the trap worth understanding. **Workflow 01 only calls workflow 02 for
 runs it ingested in that execution**, plus any whose stale model attempt it has
-just recovered (section 4). A run stranded at `INGESTED` by an earlier
+just recovered (section 4) and any review case still without a card after 15
+minutes. A run stranded at `INGESTED` by an earlier
 poll is never picked up again, because the poll is the only thing that triggers
 reconciliation. Automatic recovery is deferred (`docs/limitations-and-roadmap.md`); until then the
 loop below is the recovery:
@@ -219,8 +220,9 @@ so the retry posted again; if the first post had in fact arrived, there are now
 two.
 
 **Action.** None required. Delivery is at-least-once and this is documented, not
-a defect. Decide on one card; the other is inert, and the unique constraint on
-`run_id` means only one decision can be recorded either way.
+a defect. Decide on one card. A click on the older one is refused as
+`CARD_SUPERSEDED`, and the schema allows only one final decision per run either
+way.
 
 Making this impossible needs a transactional outbox, which is deferred.
 

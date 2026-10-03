@@ -160,7 +160,12 @@ def poll(request: Request, principal: str = Depends(require_internal_bearer)) ->
             from policy_service.domain import semantic
 
             recovered = semantic.abandon_stale_attempts(conn)
-            report.run_ids.extend(str(run_id) for run_id in recovered)
+            resent = [
+                run_id
+                for run_id in poller.runs_awaiting_a_card(conn)
+                if run_id not in set(recovered)
+            ]
+            report.run_ids.extend(str(run_id) for run_id in [*recovered, *resent])
 
             for raw in received:
                 report.polled += 1
@@ -190,6 +195,7 @@ def poll(request: Request, principal: str = Depends(require_internal_bearer)) ->
                 "skipped_unchanged": report.skipped_unchanged,
                 "truncated": truncated,
                 "recovered": len(recovered),
+                "resent": len(resent),
                 "run_ids": report.run_ids,
             }
             idempotency_store.complete(
@@ -415,11 +421,16 @@ def notify(
             owner_id=principal,
         )
         if claim.replayed:
-            return JSONResponse(
-                status_code=claim.result_status or 200,
-                content=_body(request, dict(claim.result_summary or {})),
-                headers={"Idempotency-Replayed": "true"},
-            )
+            if not triage.awaits_card(conn, run_id):
+                return JSONResponse(
+                    status_code=claim.result_status or 200,
+                    content=_body(request, dict(claim.result_summary or {})),
+                    headers={"Idempotency-Replayed": "true"},
+                )
+            # The recorded card was for a destination the run has since left
+            # (a hand-off). Replaying it would tell n8n a card exists that the
+            # current team never received, so the key runs again.
+            claim = idempotency_store.reopen(conn, claim.ledger_id, owner_id=principal)
         conn.commit()
 
         slack = SlackClient(bot_token=settings.slack_bot_token)

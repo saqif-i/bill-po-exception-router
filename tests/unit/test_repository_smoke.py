@@ -148,3 +148,28 @@ def test_shutdown_does_not_build_a_client_just_to_close_it() -> None:
     deps.get_xero_client.cache_clear()
     deps.close_xero_client()
     assert deps.get_xero_client.cache_info().misses == 0
+
+
+def test_the_xero_client_is_closed_even_if_closing_the_pool_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from fastapi.testclient import TestClient
+
+    from policy_service.api import deps
+    from policy_service.config import get_settings
+    from policy_service.db import engine
+    from policy_service.main import app
+
+    monkeypatch.setenv("XERO_CLIENT_ID", "test-client-id")
+    monkeypatch.setenv("XERO_CLIENT_SECRET", "test-value-not-real")
+    get_settings.cache_clear()
+    deps.get_xero_client.cache_clear()
+
+    def broken_close() -> None:
+        raise RuntimeError("pool would not close")
+
+    monkeypatch.setattr(engine, "close_pool", broken_close)
+    with pytest.raises(RuntimeError, match="pool would not close"), TestClient(app):
+        client = deps.get_xero_client()
+
+    assert client._client.is_closed

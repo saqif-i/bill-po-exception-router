@@ -2,7 +2,7 @@
 
 Decisions that shaped this system, with the reasoning and the alternatives
 rejected. ADR-001 through ADR-005 were made for the full design, before the v1
-scope was set, and are shown here with their v1 status. ADR-006 through ADR-008
+scope was set, and are shown here with their v1 status. ADR-006 through ADR-009
 are v1 decisions, recorded in `BUILD-SCOPE-v1.md`.
 
 An ADR is not amended silently. Where v1 changed one, the original position is
@@ -197,3 +197,36 @@ the real API.
 limits and no token expiry. The risk is fixtures drifting from the real API
 shape. The mitigation is re-capturing them with `scripts/capture_fixtures.py`;
 no response schema validates them yet.
+
+---
+
+## ADR-009: "Send to finance" and "Send to procurement" hand the case over
+
+**Status:** accepted, v1.
+
+**Context.** The AP review card offers "Send to finance" and "Send to
+procurement". They were recorded as final decisions: the run closed, the card
+updated in `#ap-review`, and nothing reached the other team. The control's name
+promised a hand-off that did not happen, and a case "sent to finance" was closed
+without finance seeing it, which breaks BR-6.
+
+**Decision.** A hand-off is recorded as a decision that does not close the run.
+The run moves to the new destination and back to `REVIEW_READY`, the AP card
+says where the case went, and notify posts a new card in that team's channel
+with that team's controls and a line saying who sent it. That team's decision
+is the final one. The schema allows any number of hand-offs and exactly one
+final decision per run (`005b_triage_handoff.sql`), and rows stay immutable, so
+the record shows who handed the case over and who decided it.
+
+Only the current card's controls count. A click on a card a hand-off replaced,
+or on a control the current destination does not offer, is refused.
+
+**Consequences.** The interaction handler makes two Slack calls, the card update
+and the new card, inside Slack's three-second window. If the new card fails to
+post, the run waits in `REVIEW_READY`, and the poll re-sends it after 15 minutes;
+the notify endpoint runs again for that run rather than replaying the earlier
+card, because that card belongs to the team the case has left.
+
+**Rejected alternative.** Post an information-only card to the other team and
+keep the decision final. Simpler, with no schema change, but the receiving team
+could not act on the card and the system would not record what they decided.

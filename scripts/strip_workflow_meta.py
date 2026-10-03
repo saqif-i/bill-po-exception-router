@@ -35,6 +35,33 @@ STRIP_TOP_LEVEL = (
 )
 
 
+def placeholder_sub_workflows(document: dict) -> None:
+    """Replace each sub-workflow id with the placeholder n8n/README.md names.
+
+    The id exists only on the instance that exported it, so committed it points
+    everyone else's Execute Sub-workflow node at nothing. The cached name is
+    kept, because it tells the reader which workflow to re-select.
+    """
+    for node in document.get("nodes", []):
+        if node.get("type") != "n8n-nodes-base.executeWorkflow":
+            continue
+        reference = node.get("parameters", {}).get("workflowId")
+        if not isinstance(reference, dict):
+            continue
+        prefix = str(reference.get("cachedResultName", "")).split("-", 1)[0]
+        reference["value"] = (
+            f"REPLACE_WITH_{prefix}_WORKFLOW_ID" if prefix.isdigit() else "REPLACE_WITH_WORKFLOW_ID"
+        )
+        reference.pop("cachedResultUrl", None)
+
+
+def placeholder_error_workflow(document: dict) -> None:
+    """The error workflow is referenced by an instance-specific id too."""
+    settings = document.get("settings")
+    if isinstance(settings, dict) and settings.get("errorWorkflow"):
+        settings["errorWorkflow"] = "REPLACE_WITH_03_WORKFLOW_ID"
+
+
 def main() -> int:
     changed = 0
     for path in sorted(WORKFLOWS.glob("*.json")):
@@ -43,6 +70,13 @@ def main() -> int:
 
         for key in STRIP_TOP_LEVEL:
             document.pop(key, None)
+        # Pinned node output from an editor session: real run ids and responses
+        # from one instance's database. n8n uses it in place of a live call on a
+        # manual run, so a committed pin makes 02 replay one old bill.
+        if document.get("pinData"):
+            document["pinData"] = {}
+        placeholder_sub_workflows(document)
+        placeholder_error_workflow(document)
 
         meta = document.get("meta")
         if isinstance(meta, dict):

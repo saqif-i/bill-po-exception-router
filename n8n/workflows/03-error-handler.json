@@ -70,7 +70,7 @@
           "parameters": [
             {
               "name": "Idempotency-Key",
-              "value": "={{ 'alert-' + $json.workflow.replace(/[^A-Za-z0-9._:-]/g, '-') + '-' + ($json.execution_id || ('handler-' + $execution.id)) }}"
+              "value": "={{ 'alert-' + $json.workflow.replace(/[^A-Za-z0-9._:-]/g, '-') + '-' + ($json.execution_id || ('handler-' + $execution.id)) + '-' + $json.failed_at.replace(/[^A-Za-z0-9._:-]/g, '-') }}"
             }
           ]
         },
@@ -94,7 +94,10 @@
           "id": "dFDsMT7F1BU9tCTZ",
           "name": "policy service bearer"
         }
-      }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
     }
   ],
   "pinData": {},

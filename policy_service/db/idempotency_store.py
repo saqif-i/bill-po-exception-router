@@ -152,6 +152,32 @@ def claim(
         raise ServiceError(code="IDEMPOTENCY_PERMANENT_FAILURE", status_code=409)
 
 
+def reopen(conn: Connection, ledger_id: uuid.UUID, *, owner_id: str) -> Claim:
+    """Take a SUCCEEDED key back to PROCESSING, as a new generation.
+
+    For a recorded result that is no longer true, so replaying it would
+    mislead the caller. Only the endpoint that owns the key can know that.
+    """
+    now = datetime.now(UTC)
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE idempotency_registry
+               SET status='PROCESSING', owner_id=%s, locked_at=%s, lease_expires_at=%s,
+                   claim_generation=claim_generation+1, attempt_count=attempt_count+1,
+                   result_status=NULL, result_summary=NULL,
+                   completed_at=NULL, retained_until=NULL, updated_at=now()
+             WHERE ledger_id=%s AND status='SUCCEEDED'
+            RETURNING claim_generation
+            """,
+            (owner_id, now, now + timedelta(seconds=LEASE_SECONDS), ledger_id),
+        )
+        taken = cur.fetchone()
+    if taken is None:
+        raise ServiceError(code="IDEMPOTENCY_IN_PROGRESS", status_code=202)
+    return Claim(ledger_id, generation=taken[0])
+
+
 def complete(
     conn: Connection, ledger_id: uuid.UUID, *, generation: int, status_code: int, summary: dict
 ) -> bool:

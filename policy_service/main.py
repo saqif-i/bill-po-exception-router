@@ -24,8 +24,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()  # raises on any invalid setting
     configure_logging(settings.log_level)
     yield
-    engine.close_pool()
-    deps.close_xero_client()
+    try:
+        engine.close_pool()
+    finally:
+        deps.close_xero_client()
 
 
 app = FastAPI(title="Bill-to-PO exception router", lifespan=lifespan, docs_url=None)

@@ -49,7 +49,7 @@ recorded as not applicable with a reason, not quietly dropped.
 |---|---|
 | Repository foundation and CI | Full. Pinned dependencies, secret scanning, CI, two-database boundary. |
 | FastAPI service foundation | Reduced. Auth, correlation IDs, safe errors, health and readiness, request limits, the `Idempotency-Key` contract. No outbox, retention, status or webhook endpoints. |
-| PostgreSQL data model | Reduced. Four migrations: `001_core_schema.sql` (runs, bills, purchase orders, fixtures, ingestion, idempotency registry), `003_reconciliation.sql`, `004_semantic.sql` and `005_triage_and_slack.sql` reduced to the triage and decision tables. No lease or fencing machinery. |
+| PostgreSQL data model | Reduced. Five migrations: `001_core_schema.sql` (runs, bills, purchase orders, fixtures, ingestion, idempotency registry), `003_reconciliation.sql`, `004_semantic.sql`, `005_triage_and_slack.sql` reduced to the triage and decision tables, and `005b_triage_handoff.sql` (hand-offs, ADR-009). No lease or fencing machinery. |
 | Xero connection and read client | Read path only. Custom Connection, token caching, timeouts, bounded retries, `Retry-After` handling, decimal-safe parsing. The transport allow-list contains no write method. |
 | Deterministic reconciliation | Full. This is the core and is not reduced. |
 | n8n polling and orchestration | Three workflows: polling, processing, error handling. |
@@ -115,13 +115,15 @@ building the durable outbox or recovery and replay later is additive.
 
 Four consequences that are easy to get wrong:
 
-1. **Migration numbering has one gap.** v1 creates `001`, `003`, `004` and
-   `005`, the last reduced to the triage and decision tables without the Slack
-   result-update lifecycle that belongs to the durable outbox. `002` is reserved
-   for the fixture reset machinery, and `006` through `008` for the durable
-   outbox, recovery and replay, and webhooks. `db/migrate.py` applies files in
-   lexical order of what exists on disk and must not assert a contiguous
-   sequence. Do not renumber and do not reuse `002`.
+1. **Migration numbering has one gap.** v1 creates `001`, `003`, `004`, `005`
+   and `005b`. `005` is reduced to the triage and decision tables without the
+   Slack result-update lifecycle that belongs to the durable outbox. `002` is
+   reserved for the fixture reset machinery, and `006` through `008` for the
+   durable outbox, recovery and replay, and webhooks. `005b` (ADR-009) is lettered
+   rather than numbered because the runner refuses a migration that sorts before
+   one already applied: numbering it `009` would block `006` to `008` for good.
+   `db/migrate.py` applies files in lexical order of what exists on disk and
+   must not assert a contiguous sequence. Do not renumber and do not reuse `002`.
 2. **`xero_transport.py` stays separate from `xero_client.py`** even though v1 has
    no write path, so the method-and-path allow-list stays testable without
    constructing a client.

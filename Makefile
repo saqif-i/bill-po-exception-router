@@ -9,10 +9,10 @@ include .env
 export
 endif
 
-.PHONY: help lock lock-local fmt lint test up down logs migrate check-db verify-secrets gate
+.PHONY: help lock lock-local fmt lint test up down logs migrate seed-fixtures check-db verify-secrets gate
 
 help:  ## show this help
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
+	@grep -hE '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
 	 | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-16s %s\n", $$1, $$2}'
 
 lock:  ## compile the .in files into hash-pinned lock files
@@ -61,6 +61,9 @@ migrate:  ## apply migrations to the app AND test databases, as bpr_owner
 		printf 'and the test database: '; \
 		BPR_OWNER_DATABASE_URL="$$BPR_TEST_DATABASE_URL" python -m policy_service.db.migrate; \
 	fi
+
+seed-fixtures:  ## load the fixture allow-list from tests/fixtures/, as bpr_owner
+	python scripts/seed_fixtures.py
 
 check-db:  ## assert the n8n boundary holds against the running container
 	python scripts/check_db_boundaries.py

@@ -50,8 +50,8 @@ FAILED_RUNS = """
     SELECT r.xero_invoice_number, r.workflow_status, r.reconciliation_outcome,
            r.updated_at
       FROM runs r
-     WHERE r.workflow_status IN ('INGESTED', 'RECONCILING', 'NOTIFY_PENDING',
-                                 'ACTION_FAILED')
+     WHERE r.workflow_status IN ('INGESTED', 'RECONCILING', 'REVIEW_READY',
+                                 'NOTIFY_PENDING', 'ACTION_FAILED')
        AND r.updated_at < now() - interval '15 minutes'
      ORDER BY r.updated_at
 """

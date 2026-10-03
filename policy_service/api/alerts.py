@@ -8,11 +8,13 @@ execution list, which nobody watches.
 
 from __future__ import annotations
 
+import hashlib
 import uuid
+from datetime import timedelta
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, field_validator
 
 from policy_service.api.auth import require_internal_bearer
 from policy_service.api.errors import ServiceError
@@ -27,14 +29,56 @@ from policy_service.security.redaction import redact
 router = APIRouter(prefix="/alerts", tags=["alerts"])
 
 
+# An identical alert already posted within this window is recorded but not
+# posted again, so a failure that repeats every poll does not post every poll.
+# Failure messages name the run, so separate bills still alert separately.
+REPEAT_WINDOW = timedelta(minutes=30)
+
+# Longest value kept for each field. Longer values are shortened, not refused:
+# an alert rejected for a long error message is an alert nobody receives.
+FIELD_LIMITS = {
+    "workflow": 200,
+    "execution_id": 100,
+    "failed_node": 200,
+    "message": 2000,
+    "failed_at": 64,
+}
+
+
 class AlertBody(BaseModel):
     """What workflow 03 knows about the failure. Every field is bounded."""
 
-    workflow: str = Field(max_length=200)
-    execution_id: str | None = Field(default=None, max_length=100)
-    failed_node: str | None = Field(default=None, max_length=200)
-    message: str | None = Field(default=None, max_length=2000)
-    failed_at: str | None = Field(default=None, max_length=64)
+    workflow: str
+    execution_id: str | None = None
+    failed_node: str | None = None
+    message: str | None = None
+    failed_at: str | None = None
+
+    @field_validator(*FIELD_LIMITS, mode="before")
+    @classmethod
+    def _shorten(cls, value: object, info) -> object:
+        limit = FIELD_LIMITS[info.field_name]
+        if isinstance(value, str) and len(value) > limit:
+            return value[: limit - 1] + "\u2026"
+        return value
+
+
+def _fingerprint(body: AlertBody) -> str:
+    text = "|".join([body.workflow, body.failed_node or "", body.message or ""])
+    return hashlib.sha256(text.encode()).hexdigest()
+
+
+def _posted_recently(conn, alert_scope: str, fingerprint: str) -> bool:
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT 1 FROM idempotency_registry "
+            "WHERE scope = %s AND status = 'SUCCEEDED' "
+            "AND result_summary->>'fingerprint' = %s "
+            "AND result_summary->>'posted' = 'true' "
+            "AND completed_at > now() - %s LIMIT 1",
+            (alert_scope, fingerprint, REPEAT_WINDOW),
+        )
+        return cur.fetchone() is not None
 
 
 @router.post("")
@@ -51,6 +95,7 @@ def alert(
     correlation_id = uuid.UUID(request.state.correlation_id)
     request_hash = canonical_hash(principal, operation, body.model_dump())
     settings = get_settings()
+    fingerprint = _fingerprint(body)
 
     if not settings.slack_bot_token:
         raise ServiceError(code="SLACK_NOT_CONFIGURED", status_code=503)
@@ -70,6 +115,15 @@ def alert(
                 content=_body(request, dict(claim.result_summary or {})),
                 headers={"Idempotency-Replayed": "true"},
             )
+        conn.commit()
+
+        if _posted_recently(conn, scope(principal, operation), fingerprint):
+            summary = {"posted": False, "suppressed": True, "fingerprint": fingerprint}
+            idempotency_store.complete(
+                conn, claim.ledger_id, generation=claim.generation, status_code=200, summary=summary
+            )
+            conn.commit()
+            return JSONResponse(status_code=200, content=_body(request, summary))
         conn.commit()
 
     # The message can quote a provider response, so it is scrubbed for anything
@@ -92,7 +146,12 @@ def alert(
         _release_claim(claim, "ALERT_FAILED")
         raise
 
-    summary = {"posted": outcome.ok, "channel": ALERTS_CHANNEL, "error": outcome.error or None}
+    summary = {
+        "posted": outcome.ok,
+        "channel": ALERTS_CHANNEL,
+        "error": outcome.error or None,
+        "fingerprint": fingerprint,
+    }
     if not outcome.ok:
         # An alert nobody received is the failure this endpoint exists to stop.
         _release_claim(claim, "ALERT_NOT_POSTED")

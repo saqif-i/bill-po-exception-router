@@ -125,3 +125,41 @@ def test_supplier_and_model_text_cannot_ping_or_disguise_links() -> None:
 
 def test_escaping_does_not_double_escape() -> None:
     assert escape_mrkdwn("a & b < c > d") == "a &amp; b &lt; c &gt; d"
+
+
+def test_a_handed_off_card_says_where_the_case_went() -> None:
+    from policy_service.integrations.slack_blocks import build_decided_card
+
+    handed = str(
+        build_decided_card(
+            invoice_number="INV-1",
+            action=TriageAction.SEND_TO_FINANCE,
+            decided_by="U1",
+            decided_at="now",
+            handed_to=TriageDestination.FINANCE,
+        )
+    )
+    final = str(
+        build_decided_card(
+            invoice_number="INV-1",
+            action=TriageAction.MARK_REVIEWED,
+            decided_by="U1",
+            decided_at="now",
+        )
+    )
+    assert "It is now with finance." in handed
+    assert "routed" not in final and "now with" not in final
+
+
+def test_a_card_handed_to_a_team_says_who_sent_it() -> None:
+    blocks = build_card(
+        run_id="r1",
+        invoice_number="INV-1",
+        destination=TriageDestination.FINANCE,
+        exception_codes=["UNPAIRED_LINE"],
+        recommendation=None,
+        semantic_gate_reason="RESIDUAL_PAIR_TEXT_ONLY",
+        human_review_reasons=[],
+        handed_over={"by": "U123", "from": TriageDestination.AP_REVIEW},
+    )
+    assert "Sent here from ap review by <@U123>." in str(blocks)

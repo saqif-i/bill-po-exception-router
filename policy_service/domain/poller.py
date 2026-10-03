@@ -137,6 +137,49 @@ def purchase_order_allow_listed(conn: Connection, purchase_order: PurchaseOrder 
         return cur.fetchone() is not None
 
 
+# A review case with no posted card for this long is sent through workflow 02
+# again. Every notify attempt touches updated_at, so a run whose card keeps
+# failing is retried at this interval, not every poll.
+UNNOTIFIED_AFTER = timedelta(minutes=15)
+MAX_RESENT_PER_POLL = 50
+
+
+def runs_awaiting_a_card(
+    conn: Connection,
+    *,
+    older_than: timedelta = UNNOTIFIED_AFTER,
+    limit: int = MAX_RESENT_PER_POLL,
+) -> list[uuid.UUID]:
+    """Review cases ready for a card that never got one.
+
+    Workflow 01 sends 02 only the runs it ingested in that poll. A run whose 02
+    failed after reconciliation, at semantic review or at notify, was therefore
+    never picked up again, including a run already recovered once by the
+    stale-attempt cleanup. Re-sent, 02 replays reconcile and semantic review
+    and posts the card.
+
+    Only runs whose model stage has finished: a stage still PENDING or
+    IN_PROGRESS is not ready for a card, and IN_PROGRESS is the stale-attempt
+    cleanup's job.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT r.run_id FROM runs r
+             WHERE r.workflow_status = 'REVIEW_READY'
+               AND r.semantic_stage_status IN ('NOT_REQUIRED', 'DISABLED',
+                     'COMPLETED_WITH_RECOMMENDATION', 'COMPLETED_WITHOUT_RECOMMENDATION')
+               AND r.updated_at < now() - %s
+               AND NOT EXISTS (SELECT 1 FROM slack_notifications n
+                                WHERE n.run_id = r.run_id AND n.post_status = 'POSTED')
+             ORDER BY r.updated_at
+             LIMIT %s
+            """,
+            (older_than, limit),
+        )
+        return [row[0] for row in cur.fetchall()]
+
+
 def read_cursor(conn: Connection) -> datetime | None:
     with conn.cursor() as cur:
         cur.execute(

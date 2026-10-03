@@ -85,6 +85,9 @@ async def interactions(request: Request) -> Response:
     # produces the same string and the unique index refuses the second write.
     interaction_id = (f"{payload.get('trigger_id', '')}:{run_id}:{action.value}")[:200]
     message_ts = (payload.get("message") or {}).get("ts")
+    channel_id = (payload.get("channel") or {}).get("id") or (payload.get("container") or {}).get(
+        "channel_id"
+    )
 
     from policy_service.integrations.slack_client import SlackClient
 
@@ -102,8 +105,16 @@ async def interactions(request: Request) -> Response:
                 interaction_id=interaction_id,
                 message_ts=message_ts,
             )
-        except triage.NotifyRefusedError as refused:
+        except (triage.NotifyRefusedError, triage.DecisionRefusedError) as refused:
             conn.rollback()
+            if str(refused) == "WORKFLOW_STATUS_COMPLETED":
+                # Already decided: the card should not still have buttons. It is
+                # refreshed from the recorded decision, and the click is answered
+                # with a 200, since nothing about it is an error to show.
+                triage.refresh_decided_card(
+                    conn, run_id=run_id, channel=channel_id, message_ts=message_ts, client=client
+                )
+                return PlainTextResponse("", status_code=200)
             return JSONResponse(status_code=409, content={"error": str(refused)})
         # Committed BEFORE the acknowledgement.
         conn.commit()
@@ -121,6 +132,21 @@ async def interactions(request: Request) -> Response:
                 client=client,
             )
             conn.commit()
+
+            if result.get("handoff_to") is not None:
+                # The case continues with the other team: post their card now.
+                # If this fails the run waits in REVIEW_READY, and the poll
+                # re-sends it through workflow 02 after 15 minutes.
+                try:
+                    triage.notify(conn, run_id=run_id, correlation_id=uuid.uuid4(), client=client)
+                    conn.commit()
+                except Exception:
+                    conn.rollback()
+                    logging.getLogger(__name__).warning(
+                        "hand-off card not posted; left for the re-send",
+                        extra={"run_id": str(run_id)},
+                        exc_info=True,
+                    )
 
     # An empty 200 leaves the card as the update left it.
     return PlainTextResponse("", status_code=200)

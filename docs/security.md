@@ -39,7 +39,9 @@ evidence spans. Evidence spans are verbatim substrings of the two descriptions,
 so nothing is shown that the supplier did not write. That text, the model's
 explanation and the invoice number have `&`, `<` and `>` escaped before they
 reach Slack, so supplier wording such as `<!channel>` cannot notify a channel
-or disguise a link.
+or disguise a link. Failure alerts in `#ap-alerts` carry the workflow, node and
+error message; the message is passed through redaction and escaped before it is
+posted.
 
 ## Redaction
 

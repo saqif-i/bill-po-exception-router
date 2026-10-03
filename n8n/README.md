@@ -4,14 +4,20 @@ Three workflows, exported as JSON and committed. Import through the n8n UI:
 **Workflows → Import from File**.
 
 Built against **n8n 2.x**. Every node type and version below was checked against
-a live 2.39.6 instance rather than written from memory, and each node
-configuration was validated against that instance's own schema.
+a live 2.39.6 instance rather than written from memory, and the original node
+configurations were validated against that instance's own schema. Nodes added
+since were not: the status checks and Stop and Error nodes in 02 copy
+configurations already validated in 01, but the **Alert** node in 03 sends a JSON
+body (`sendBody`, `specifyBody`, `jsonBody`), which no validated node does. After
+importing, open it and confirm it shows no warning. It retries three times, five
+seconds apart, and its key includes the failure time, so it stays unique if
+n8n's execution ids restart after a reset.
 
 | File | Trigger | What it does |
 |---|---|---|
 | `01-bill-polling.json` | Schedule, every 5 minutes | Calls `/runs/poll`, splits the returned run ids, calls 02 for each |
 | `02-bill-processing.json` | Called by 01 | Reconcile, then semantic review if the gate permits, then notify |
-| `03-error-handler.json` | Error trigger | Shapes a failure into a readable record. Set as the error workflow on both others |
+| `03-error-handler.json` | Error trigger | Shapes a failure and posts it to `#ap-alerts` through the service's `/alerts`. The error workflow of both others |
 
 ## Node versions
 
@@ -64,15 +70,24 @@ localhost is that container.
    `REPLACE_WITH_02_WORKFLOW_ID`, because a workflow id is specific to your
    instance.
 3. On 01 and 02, open **Settings** and set the error workflow to
-   `03-error-handler`.
-4. Save each, then activate `01-bill-polling`.
+   `03-error-handler`. The committed files have `REPLACE_WITH_03_WORKFLOW_ID`
+   for the same reason.
+4. In Slack, create `#ap-alerts` and invite the bot, as for the four triage
+   channels. n8n holds no Slack token (ADR-002), so 03 posts through the
+   service, which uses its own.
+5. Save each, then activate `01-bill-polling`.
 
 ## Two details in the JSON worth knowing
 
 **`fullResponse` and `neverError`** are set on every HTTP node. The first gives
 the IF nodes a `statusCode` to branch on; the second makes a 4xx a value to
 branch on rather than a thrown node error, so the retryable and failed paths can
-be distinguished.
+be distinguished. In 02, each of the three service calls is followed by a
+`statusCode == 200` check, and Notify Succeeded also requires `body.posted` or
+`body.already`, because a 200 alone is not proof that a card exists. Anything
+else goes to a Stop and Error node, whose message names the run, so the error
+workflow alerts `#ap-alerts` with the bill that failed, rather than the bill landing in Closed Without Review
+as though it had nothing to review.
 
 **`onError: continueRegularOutput`** on Process Each Bill. One malformed bill
 should not cost you the other eight.
@@ -85,7 +100,11 @@ Re-export after any change, commit the file, and scan before committing:
 ./scripts/verify_no_secrets.sh
 ```
 
-That runs `scripts/check_workflow_exports.py`, which parses the JSON and
-inspects the places a credential can actually land. A credential can end up
+That runs `scripts/strip_workflow_meta.py`, which removes instance-specific
+values and puts the `REPLACE_WITH_02_WORKFLOW_ID` placeholder back on Process
+Each Bill and `REPLACE_WITH_03_WORKFLOW_ID` back in the error-workflow setting,
+so a re-export cannot commit your instance's workflow ids. It then runs
+`scripts/check_workflow_exports.py`, which parses the JSON and inspects the
+places a credential can actually land. A credential can end up
 inside a node parameter, and a workflow export is a file you will commit
 repeatedly.
