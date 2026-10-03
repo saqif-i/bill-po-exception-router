@@ -63,12 +63,17 @@ application's, asserted by `make check-db` in CI on every push.
 `INGESTED` → `RECONCILING` → then by outcome:
 
 - `MATCHED` or `UNPROCESSABLE` → `COMPLETED`, no human, no Slack
-- `REVIEW_REQUIRED` → `REVIEW_READY` → `AWAITING_TRIAGE` → `COMPLETED`
+- `REVIEW_REQUIRED` → `REVIEW_READY` → `NOTIFY_PENDING` → `AWAITING_TRIAGE` → `COMPLETED`
 
 `REVIEW_READY` exists to resolve a real contradiction: the reconciler writes the
 outcome, a review case receives `REVIEW_REQUIRED`, and `RECONCILING` requires a
 null outcome. `semantic_stage_status` records progress through the model stage
 rather than a second workflow status.
+
+`NOTIFY_PENDING` lasts only while the card is being posted. Notify locks the run,
+checks it, claims it and commits before calling Slack, so no lock or transaction
+spans the call, and a second notify is refused by the claim. A post that does
+not succeed returns the run to `REVIEW_READY` for a retry.
 
 ## What is not here
 

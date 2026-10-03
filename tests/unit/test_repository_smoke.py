@@ -118,3 +118,33 @@ def test_readiness_requires_every_migration_on_disk() -> None:
 
     on_disk = sorted(p.name for p in (REPO / "migrations").glob("*.sql"))
     assert list(REQUIRED_MIGRATIONS) == on_disk
+
+
+def test_shutdown_closes_the_shared_xero_client(monkeypatch: pytest.MonkeyPatch) -> None:
+    """It and its token client used to stay open until the process exited."""
+    from fastapi.testclient import TestClient
+
+    from policy_service.api import deps
+    from policy_service.config import get_settings
+    from policy_service.main import app
+
+    monkeypatch.setenv("XERO_CLIENT_ID", "test-client-id")
+    monkeypatch.setenv("XERO_CLIENT_SECRET", "test-value-not-real")
+    get_settings.cache_clear()
+    deps.get_xero_client.cache_clear()
+
+    with TestClient(app):
+        client = deps.get_xero_client()
+        token_http = client.on_close.__self__
+
+    assert client._client.is_closed
+    assert token_http.is_closed
+    assert deps.get_xero_client.cache_info().currsize == 0
+
+
+def test_shutdown_does_not_build_a_client_just_to_close_it() -> None:
+    from policy_service.api import deps
+
+    deps.get_xero_client.cache_clear()
+    deps.close_xero_client()
+    assert deps.get_xero_client.cache_info().misses == 0

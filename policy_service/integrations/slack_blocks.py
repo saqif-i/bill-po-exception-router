@@ -54,6 +54,10 @@ ACTIONS_FOR: dict[TriageDestination, tuple[TriageAction, ...]] = {
     ),
 }
 
+# Where workflow failures are reported. The bot must be a member, as it must be
+# of the four triage channels.
+ALERTS_CHANNEL = "ap-alerts"
+
 DISCLAIMER = (
     "This is an operational triage record. It does not approve, reject or pay "
     "anything, and it changes nothing in Xero."
@@ -198,3 +202,31 @@ def build_decided_card(
         ),
         {"type": "context", "elements": [{"type": "mrkdwn", "text": DISCLAIMER}]},
     ]
+
+
+def build_alert(
+    *,
+    workflow: str,
+    failed_node: str | None,
+    message: str | None,
+    execution_id: str | None,
+    failed_at: str | None,
+) -> list[dict]:
+    """A failure alert. Every value is escaped: an error message can quote
+    supplier or provider text, and none of it may ping a channel."""
+    lines = [f"*Workflow failed*  `{escape_mrkdwn(workflow)}`"]
+    if failed_node:
+        lines.append(f"Node: `{escape_mrkdwn(failed_node)}`")
+    if message:
+        lines.append(f"> {escape_mrkdwn(' '.join(message.split()))}")
+    blocks = [_section("\n".join(lines))]
+    detail = " | ".join(
+        part
+        for part in (f"execution {execution_id}" if execution_id else "", failed_at or "")
+        if part
+    )
+    if detail:
+        blocks.append(
+            {"type": "context", "elements": [{"type": "mrkdwn", "text": escape_mrkdwn(detail)}]}
+        )
+    return blocks

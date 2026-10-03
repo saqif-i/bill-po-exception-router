@@ -47,6 +47,8 @@ class XeroReadClient:
     read_timeout: float = 30.0
     schedule: RetrySchedule = field(default_factory=RetrySchedule)
     sleep: Callable[[float], None] = time.sleep
+    # Closes whatever the token provider holds, such as its own HTTP client.
+    on_close: Callable[[], None] | None = None
     _client: httpx.Client | None = None
 
     def __post_init__(self) -> None:
@@ -61,6 +63,11 @@ class XeroReadClient:
                     pool=self.connect_timeout,
                 ),
             )
+
+    def close(self) -> None:
+        self._client.close()
+        if self.on_close is not None:
+            self.on_close()
 
     def _get(
         self,

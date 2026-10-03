@@ -22,7 +22,7 @@ pytestmark = pytest.mark.skipif(not OWNER_URL, reason="no database configured")
 
 @pytest.fixture
 def client(monkeypatch: pytest.MonkeyPatch):
-    from policy_service.api import runs
+    from policy_service.api import alerts, runs
     from policy_service.config import get_settings
     from policy_service.main import app
 
@@ -30,6 +30,7 @@ def client(monkeypatch: pytest.MonkeyPatch):
     get_settings.cache_clear()
     pool = ConnectionPool(OWNER_URL, min_size=1, max_size=2, open=True)
     monkeypatch.setattr(runs, "get_pool", lambda: pool)
+    monkeypatch.setattr(alerts, "get_pool", lambda: pool)
     token = get_settings().internal_bearer_token
     yield TestClient(app), {"Authorization": f"Bearer {token}"}
     pool.close()
@@ -83,13 +84,21 @@ class ScriptedSlack:
     def __init__(self, *outcomes) -> None:
         self.outcomes = list(outcomes)
         self.posts = 0
+        self.sent: list[dict] = []
 
-    def post_card(self, **_kwargs):
+    def post_card(self, **kwargs):
         self.posts += 1
+        self.sent.append(kwargs)
         return self.outcomes.pop(0)
 
     def close(self) -> None:
         pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_exc) -> None:
+        self.close()
 
 
 def _run_state(run_id):
@@ -179,3 +188,92 @@ def test_a_request_xero_rejects_is_a_422_and_is_not_retried(client, monkeypatch)
     assert recorded == ("FAILED", "PERMANENT", "RECONCILE_FAILED")
     assert second.status_code == 409
     assert second.json()["error"] == "IDEMPOTENCY_PERMANENT_FAILURE"
+
+
+# --- alerts from the n8n error workflow --------------------------------------
+def _alert(http, headers, key, **body):
+    payload = {"workflow": "02-bill-processing", "execution_id": "4711", **body}
+    return http.post("/alerts", json=payload, headers={**headers, "Idempotency-Key": key})
+
+
+def test_a_failure_alert_reaches_the_alerts_channel_escaped_and_redacted(client, monkeypatch):
+    from policy_service.integrations import slack_client
+    from policy_service.integrations.slack_client import PostOutcome
+
+    http, headers = client
+    slack = ScriptedSlack(PostOutcome(True, message_ts="1.1"))
+    monkeypatch.setattr(slack_client, "SlackClient", lambda **_kwargs: slack)
+
+    response = _alert(
+        http,
+        headers,
+        f"alert-test-{uuid.uuid4()}",
+        failed_node="Notify Failed",
+        message="notify failed: 502 <!channel> xoxb-1234567890-abcdefghijkl",
+    )
+
+    assert response.status_code == 200
+    (sent,) = slack.sent
+    rendered = str(sent["blocks"])
+    assert sent["channel"] == "ap-alerts"
+    assert "02-bill-processing" in rendered and "Notify Failed" in rendered
+    assert "<!channel>" not in rendered
+    assert "xoxb-1234567890-abcdefghijkl" not in rendered
+
+
+def test_an_alert_that_was_not_posted_is_a_502_and_can_be_retried(client, monkeypatch):
+    from policy_service.integrations import slack_client
+    from policy_service.integrations.slack_client import PostOutcome
+
+    http, headers = client
+    slack = ScriptedSlack(PostOutcome(False, error="not_in_channel"), PostOutcome(True))
+    monkeypatch.setattr(slack_client, "SlackClient", lambda **_kwargs: slack)
+    key = f"alert-test-{uuid.uuid4()}"
+
+    first = _alert(http, headers, key)
+    recorded = _registry_row(key)
+    second = _alert(http, headers, key)
+    replay = _alert(http, headers, key)
+
+    assert first.status_code == 502
+    assert first.json()["error"] == "ALERT_NOT_POSTED"
+    assert recorded == ("FAILED", "RETRYABLE", "ALERT_NOT_POSTED")
+    assert second.status_code == 200
+    assert replay.headers.get("Idempotency-Replayed") == "true"
+    assert slack.posts == 2
+
+
+# --- stale model attempts are recovered by the poll ----------------------------
+class EmptyXero:
+    def list_invoices(self, **_kwargs):
+        return {"Invoices": []}
+
+
+def test_a_poll_finalises_a_stale_attempt_and_sends_its_run_back(client, monkeypatch):
+    from policy_service.api import deps
+    from policy_service.domain import semantic
+    from tests.integration.test_semantic_lifecycle import _seed_wording_run
+
+    http, headers = client
+    with psycopg.connect(OWNER_URL) as conn:
+        run_id, _ = _seed_wording_run(conn)
+        conn.commit()
+        semantic.start_attempt(
+            conn, run_id=run_id, correlation_id=uuid.uuid4(), model_id="m", enabled_flag=True
+        )
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE semantic_attempts SET started_at = now() - interval '11 minutes' "
+                "WHERE run_id = %s",
+                (run_id,),
+            )
+        conn.commit()
+    monkeypatch.setattr(deps, "get_xero_client", lambda: EmptyXero())
+
+    response = http.post(
+        "/runs/poll", headers={**headers, "Idempotency-Key": f"poll-test-{uuid.uuid4()}"}
+    )
+
+    assert response.status_code == 200
+    assert response.json()["recovered"] >= 1
+    assert str(run_id) in response.json()["run_ids"]

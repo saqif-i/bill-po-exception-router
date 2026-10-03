@@ -30,7 +30,7 @@ project in fifteen seconds.
 - Reseed if the demo company has reset
 - `make gate` passes
 - No `.env` open in a visible window, no terminal with a token in scrollback
-- Slack shows the four channels and nothing else
+- Slack shows the four triage channels and `#ap-alerts`, and nothing else
 - Run `python scripts/capture_metrics.py` and screenshot it
 
 ## Rules

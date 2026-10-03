@@ -153,6 +153,15 @@ def poll(request: Request, principal: str = Depends(require_internal_bearer)) ->
                 page_size=MAX_BILLS_PER_POLL,
                 max_pages=MAX_POLL_PAGES,
             )
+            # Runs whose model attempt was left STARTED are finalised here and
+            # sent back through workflow 02, which replays reconcile, has the
+            # semantic stage refused as already terminal, and posts the card.
+            # Done in this transaction so a failed poll cannot lose them.
+            from policy_service.domain import semantic
+
+            recovered = semantic.abandon_stale_attempts(conn)
+            report.run_ids.extend(str(run_id) for run_id in recovered)
+
             for raw in received:
                 report.polled += 1
                 bill = Bill.model_validate(raw)
@@ -180,6 +189,7 @@ def poll(request: Request, principal: str = Depends(require_internal_bearer)) ->
                 "skipped_not_allow_listed": report.skipped_not_allow_listed,
                 "skipped_unchanged": report.skipped_unchanged,
                 "truncated": truncated,
+                "recovered": len(recovered),
                 "run_ids": report.run_ids,
             }
             idempotency_store.complete(

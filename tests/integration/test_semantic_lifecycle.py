@@ -372,3 +372,65 @@ def test_the_captured_flag_is_recorded_with_the_attempt():
                 (run_id,),
             )
             assert cur.fetchone()[0] is True
+
+
+def _seed_started_attempt(conn, age_minutes: int):
+    run_id, _ = _seed_wording_run(conn)
+    conn.commit()
+    attempt_id = semantic.start_attempt(
+        conn, run_id=run_id, correlation_id=uuid.uuid4(), model_id="m", enabled_flag=True
+    )
+    with conn.cursor() as cur:
+        cur.execute(
+            "UPDATE semantic_attempts SET started_at = now() - make_interval(mins => %s) "
+            "WHERE attempt_id = %s",
+            (age_minutes, attempt_id),
+        )
+    conn.commit()
+    return run_id, attempt_id
+
+
+def test_a_stale_attempt_is_finalised_and_the_run_can_reach_a_person():
+    """Left STARTED by a dead process or a failed finalise(), the run waited at
+    IN_PROGRESS and notification refused it for good."""
+    from policy_service.domain import triage
+    from tests.integration.test_triage import FakeSlack
+
+    with psycopg.connect(OWNER_URL) as conn:
+        stale_run, stale_attempt = _seed_started_attempt(conn, age_minutes=11)
+        fresh_run, fresh_attempt = _seed_started_attempt(conn, age_minutes=1)
+
+        recovered = semantic.abandon_stale_attempts(conn)
+        conn.commit()
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT attempt_id, status, rejection_reason FROM semantic_attempts "
+                "WHERE attempt_id = ANY(%s)",
+                ([stale_attempt, fresh_attempt],),
+            )
+            attempts = {row[0]: row[1:] for row in cur.fetchall()}
+            cur.execute(
+                "SELECT semantic_stage_status, human_review_reasons FROM runs WHERE run_id = %s",
+                (stale_run,),
+            )
+            stage, reasons = cur.fetchone()
+
+        late = semantic.finalise(
+            conn,
+            run_id=stale_run,
+            attempt_id=stale_attempt,
+            result=Rejection(RejectionReason.REFUSED, "late"),
+        )
+        conn.commit()
+        card = triage.notify(
+            conn, run_id=stale_run, correlation_id=uuid.uuid4(), client=FakeSlack()
+        )
+        conn.commit()
+
+    assert stale_run in recovered and fresh_run not in recovered
+    assert attempts[stale_attempt] == ("REJECTED", "SEMANTIC_PROVIDER_UNAVAILABLE")
+    assert attempts[fresh_attempt] == ("STARTED", None)
+    assert stage == "COMPLETED_WITHOUT_RECOMMENDATION"
+    assert "SEMANTIC_PROVIDER_UNAVAILABLE" in reasons
+    assert late["applied"] is False  # I32
+    assert card["posted"] is True

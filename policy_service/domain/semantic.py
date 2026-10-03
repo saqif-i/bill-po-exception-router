@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
+from datetime import timedelta
 
 from psycopg import Connection
 
@@ -222,6 +223,47 @@ def finalise(
         )
 
     return {"applied": True, "semantic_stage_status": stage}
+
+
+# An attempt still STARTED after this long has no request left to finish it:
+# the model call times out at 30 seconds, n8n gives up at 60, and the
+# idempotency lease expires at 300.
+STALE_ATTEMPT_AGE = timedelta(minutes=10)
+
+
+def abandon_stale_attempts(
+    conn: Connection, *, older_than: timedelta = STALE_ATTEMPT_AGE
+) -> list[uuid.UUID]:
+    """Finalise attempts left STARTED, and return the runs they belonged to.
+
+    An attempt stays STARTED when the process dies during the call, or when
+    finalise() itself fails. The run then waits at IN_PROGRESS and notification
+    refuses it (I31), so it never reaches a person. Each stale attempt is
+    finalised as SEMANTIC_PROVIDER_UNAVAILABLE, which is I06: the person sees
+    the case with no recommendation.
+
+    A result that arrives after this affects zero rows (I32). SKIP LOCKED leaves
+    any attempt another transaction is finalising right now to that transaction.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT attempt_id, run_id FROM semantic_attempts "
+            "WHERE status = 'STARTED' AND started_at < now() - %s "
+            "ORDER BY started_at FOR UPDATE SKIP LOCKED",
+            (older_than,),
+        )
+        stale = cur.fetchall()
+    recovered = []
+    for attempt_id, run_id in stale:
+        summary = finalise(
+            conn,
+            run_id=run_id,
+            attempt_id=attempt_id,
+            result=Rejection(RejectionReason.PROVIDER_UNAVAILABLE, "abandoned: no result recorded"),
+        )
+        if summary["applied"]:
+            recovered.append(run_id)
+    return recovered
 
 
 def review(

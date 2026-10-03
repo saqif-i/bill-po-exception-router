@@ -143,3 +143,22 @@ def test_notify_succeeded_requires_a_card_to_exist() -> None:
     left = [c["leftValue"] for c in conditions["conditions"]]
     assert "={{ $json.statusCode }}" in left
     assert any("body.posted" in v and "body.already" in v for v in left)
+
+
+def test_failures_in_01_and_02_go_to_the_error_workflow() -> None:
+    """Without it, a failed bill showed up only in n8n's execution list."""
+    for name in ("01-bill-polling.json", "02-bill-processing.json"):
+        workflow = json.loads((REPO / "n8n" / "workflows" / name).read_text())
+        assert workflow["settings"]["errorWorkflow"] == "REPLACE_WITH_03_WORKFLOW_ID", name
+
+
+def test_the_error_workflow_ends_by_alerting_someone() -> None:
+    workflow = json.loads((REPO / "n8n" / "workflows" / "03-error-handler.json").read_text())
+    nodes = {n["name"]: n for n in workflow["nodes"]}
+    targets = {c["node"] for out in workflow["connections"].values() for c in out["main"][0]}
+    (last,) = [name for name in nodes if name not in workflow["connections"]]
+    assert last in targets
+    parameters = nodes[last]["parameters"]
+    assert nodes[last]["type"] == "n8n-nodes-base.httpRequest"
+    assert parameters["url"].endswith("/alerts")
+    assert any(h["name"] == "Idempotency-Key" for h in parameters["headerParameters"]["parameters"])

@@ -33,7 +33,8 @@ version key is unchanged, so no second run is created, and the poll reports it
 as `skipped_unchanged`.
 
 That is the trap worth understanding. **Workflow 01 only calls workflow 02 for
-runs it ingested in that execution.** A run stranded at `INGESTED` by an earlier
+runs it ingested in that execution**, plus any whose stale model attempt it has
+just recovered (section 4). A run stranded at `INGESTED` by an earlier
 poll is never picked up again, because the poll is the only thing that triggers
 reconciliation. Automatic recovery is deferred (`docs/limitations-and-roadmap.md`); until then the
 loop below is the recovery:
@@ -50,6 +51,20 @@ while read -r id; do
     -H "Idempotency-Key: $id-reconcile"
 done
 ```
+
+**If the stuck status is `NOTIFY_PENDING`.** Notify claims the run before calling
+Slack and records the result afterwards, so a service that dies during the Slack
+call leaves it there. This case is covered by the integration tests rather than
+triggered against the running stack. Whether a card was posted is unknown: look
+in the channel first. Then return the run and re-run notify with the same key:
+
+```sql
+UPDATE runs SET workflow_status = 'REVIEW_READY'
+ WHERE run_id = '<run>' AND workflow_status = 'NOTIFY_PENDING';
+```
+
+If the first card did get through, this posts a second one. That is the
+at-least-once position in section 6, not a new failure.
 
 ---
 
@@ -95,7 +110,8 @@ SELECT fixture_status, count(*) FROM seed_fixtures GROUP BY 1;
 become runs, and the demo company's own sample invoices are not on it.
 
 **Action.** If the count of `ACTIVE` is zero or wrong, repopulate from the
-captured fixtures in `tests/fixtures/`. If it looks right, confirm the
+captured fixtures in `tests/fixtures/` with `make seed-fixtures`. It adds the
+bills and the purchase orders, and skips any already present. If it looks right, confirm the
 invoice ids in `seed_fixtures` match the ones Xero is returning; a demo company
 reset changes them.
 
@@ -143,8 +159,10 @@ crash leaves a visible `STARTED` row rather than a call nobody recorded.
 Notification is then correctly refused, because I31 requires a terminal stage: a
 card posted now would change under the reviewer.
 
-**Action.** There is no automatic recovery in this build; it is deferred
-(`docs/limitations-and-roadmap.md`). Resolve by hand:
+**Action.** The next poll that runs ten minutes or more after the attempt
+started recovers it: it finalises the attempt as `SEMANTIC_PROVIDER_UNAVAILABLE`
+and sends the run back through workflow 02, which posts the card. The same
+happens if `finalise()` itself failed. To resolve it sooner, by hand:
 
 ```sql
 UPDATE semantic_attempts SET status='REJECTED',
@@ -196,7 +214,9 @@ SELECT run_id, post_status, post_error FROM slack_notifications
 
 **Cause.** A post that timed out was recorded as `POSSIBLE_DUPLICATE`, because
 the outcome was genuinely unknown. Calling it a failure would be a claim the code
-cannot support.
+cannot support. Notify then returned 502 `CARD_NOT_POSTED` and released its key,
+so the retry posted again; if the first post had in fact arrived, there are now
+two.
 
 **Action.** None required. Delivery is at-least-once and this is documented, not
 a defect. Decide on one card; the other is inert, and the unique constraint on

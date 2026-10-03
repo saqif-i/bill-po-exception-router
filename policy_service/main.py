@@ -12,7 +12,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, Response
 
-from policy_service.api import errors, health, runs, slack
+from policy_service.api import alerts, deps, errors, health, runs, slack
 from policy_service.api.limits import BodyLimitMiddleware
 from policy_service.config import get_settings
 from policy_service.db import engine
@@ -25,6 +25,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     configure_logging(settings.log_level)
     yield
     engine.close_pool()
+    deps.close_xero_client()
 
 
 app = FastAPI(title="Bill-to-PO exception router", lifespan=lifespan, docs_url=None)
@@ -34,6 +35,7 @@ app.add_exception_handler(Exception, errors.unhandled_error_handler)
 app.include_router(health.router)
 app.include_router(runs.router)
 app.include_router(slack.router)
+app.include_router(alerts.router)
 
 
 app.add_middleware(BodyLimitMiddleware)

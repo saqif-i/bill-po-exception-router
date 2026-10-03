@@ -41,4 +41,18 @@ def get_xero_client() -> XeroReadClient | None:
         connect_timeout=settings.xero_connect_timeout_seconds,
         read_timeout=settings.xero_read_timeout_seconds,
         schedule=RetrySchedule(max_attempts=settings.xero_max_attempts),
+        on_close=http.close,
     )
+
+
+def close_xero_client() -> None:
+    """Close the shared client and its token client, then forget them.
+
+    Only a client that was actually built is closed: calling get_xero_client()
+    here would build one at shutdown just to close it.
+    """
+    if get_xero_client.cache_info().currsize:
+        client = get_xero_client()
+        if client is not None:
+            client.close()
+    get_xero_client.cache_clear()

@@ -60,15 +60,41 @@
       "id": "75ac60a7-5ec3-4223-9265-ad8904b69d77"
     },
     {
-      "parameters": {},
-      "type": "n8n-nodes-base.noOp",
-      "typeVersion": 1,
+      "parameters": {
+        "method": "POST",
+        "url": "http://policy_service:8000/alerts",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Idempotency-Key",
+              "value": "={{ 'alert-' + $json.workflow.replace(/[^A-Za-z0-9._:-]/g, '-') + '-' + ($json.execution_id || ('handler-' + $execution.id)) }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ workflow: $json.workflow, execution_id: $json.execution_id || null, failed_node: $json.failed_node || null, message: $json.message || null, failed_at: $json.failed_at || null }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
       "position": [
         448,
         0
       ],
-      "name": "Record Failure",
-      "id": "d64ef06a-f7ae-4090-b27f-78c4101a4591"
+      "name": "Alert",
+      "id": "5c25e648-b2b1-487a-90e7-112421fe7fde",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "dFDsMT7F1BU9tCTZ",
+          "name": "policy service bearer"
+        }
+      }
     }
   ],
   "pinData": {},
@@ -88,7 +114,7 @@
       "main": [
         [
           {
-            "node": "Record Failure",
+            "node": "Alert",
             "type": "main",
             "index": 0
           }

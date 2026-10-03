@@ -560,7 +560,8 @@
   "settings": {
     "executionOrder": "v1",
     "binaryMode": "separate",
-    "availableInMCP": true
+    "availableInMCP": true,
+    "errorWorkflow": "REPLACE_WITH_03_WORKFLOW_ID"
   },
   "nodeGroups": [],
   "tags": []
