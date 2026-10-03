@@ -7,6 +7,7 @@ so a captured fixture and a live response are the same thing to it (ADR-008).
 from __future__ import annotations
 
 import os
+import threading
 import uuid
 
 import pytest
@@ -19,6 +20,7 @@ from policy_service.domain.poller import (  # noqa: E402
     active_fixtures,
     advance_cursor,
     ingest_bill,
+    purchase_order_allow_listed,
     read_cursor,
     reconcile_run,
 )
@@ -88,15 +90,21 @@ def _po(lines, **kw):
     return PurchaseOrder.model_validate(payload)
 
 
-def _seed_fixture(conn, resource_id):
+def _seed_fixture(conn, resource_id, resource_type="INVOICE"):
     fixture_id = uuid.uuid4()
     with conn.cursor() as cur:
         cur.execute(
             "INSERT INTO seed_fixtures (fixture_id, seed_run_id, fixture_name, "
             "fixture_reference, xero_resource_type, xero_resource_id, human_reference, "
             "expected_scenario, disposition, fixture_status, created_at) VALUES "
-            "(%s, %s, 'e2e', %s, 'INVOICE', %s, 'INV', 'X', 'CREATED', 'ACTIVE', now())",
-            (fixture_id, uuid.uuid4(), f"BPR-SEED-{resource_id.hex[:8]}", resource_id),
+            "(%s, %s, 'e2e', %s, %s, %s, 'INV', 'X', 'CREATED', 'ACTIVE', now())",
+            (
+                fixture_id,
+                uuid.uuid4(),
+                f"BPR-SEED-{resource_id.hex[:8]}",
+                resource_type,
+                resource_id,
+            ),
         )
     return fixture_id
 
@@ -124,6 +132,7 @@ def test_a_bill_reaches_a_recorded_exception():
             bill=bill,
             purchase_order=po,
             chart=CHART,
+            po_allow_listed=True,
         )
         conn.commit()
 
@@ -159,6 +168,7 @@ def test_a_clean_bill_completes_silently():
             bill=bill,
             purchase_order=po,
             chart=CHART,
+            po_allow_listed=True,
         )
         conn.commit()
         with conn.cursor() as cur:
@@ -238,6 +248,7 @@ def test_the_wording_only_case_reaches_the_gate_open():
             bill=bill,
             purchase_order=po,
             chart=CHART,
+            po_allow_listed=True,
             semantic_review_enabled=True,
         )
         conn.commit()
@@ -278,6 +289,7 @@ def test_the_wording_plus_price_case_reaches_the_gate_closed():
             bill=bill,
             purchase_order=po,
             chart=CHART,
+            po_allow_listed=True,
             semantic_review_enabled=True,
         )
         conn.commit()
@@ -302,3 +314,117 @@ def test_the_cursor_advances_only_after_success_and_overlaps():
 def test_allow_list_ignores_a_superseded_fixture():
     assert check_allow_list("abc", {}).allowed is False
     assert check_allow_list("abc", {"abc": "fix-1"}).allowed is True
+
+
+def _ingest_and_reconcile(conn, bill, po):
+    run_id, _ = ingest_bill(conn, bill, active_fixtures(conn), uuid.uuid4())
+    conn.commit()
+    summary = reconcile_run(
+        conn,
+        run_id=run_id,
+        correlation_id=uuid.uuid4(),
+        bill=bill,
+        purchase_order=po,
+        chart=CHART,
+        po_allow_listed=True,
+    )
+    conn.commit()
+    return summary
+
+
+def test_an_edited_bill_is_not_a_duplicate_of_its_own_earlier_run():
+    """Re-saving a bill in Xero creates a new run. Matching it against the
+    earlier run of the same bill would send every edit to duplicate review."""
+    invoice_id = uuid.uuid4()
+    number = f"INV-{invoice_id.hex[:6]}"
+    original = _bill(invoice_id, number, [_line("widget")])
+    edited = _bill(invoice_id, number, [_line("widget", Quantity="12")])
+    po = _po([_line("widget")], number=f"PO-{invoice_id.hex[:8]}")
+
+    with psycopg.connect(OWNER_URL) as conn:
+        _seed_fixture(conn, invoice_id)
+        conn.commit()
+        _ingest_and_reconcile(conn, original, po)
+        summary = _ingest_and_reconcile(conn, edited, po)
+
+    assert "DUPLICATE_INVOICE_NUMBER" not in summary["exception_codes"]
+    assert "DUPLICATE_BUSINESS_KEY" not in summary["exception_codes"]
+
+
+def test_a_different_bill_with_the_same_number_is_still_a_duplicate():
+    first_id, second_id = uuid.uuid4(), uuid.uuid4()
+    number = f"INV-{first_id.hex[:6]}"
+    reference = f"PO-{first_id.hex[:8]}"
+    po = _po([_line("widget")], number=reference)
+
+    with psycopg.connect(OWNER_URL) as conn:
+        _seed_fixture(conn, first_id)
+        _seed_fixture(conn, second_id)
+        conn.commit()
+        _ingest_and_reconcile(conn, _bill(first_id, number, [_line("widget")], ref=reference), po)
+        summary = _ingest_and_reconcile(
+            conn, _bill(second_id, number, [_line("widget")], ref=reference), po
+        )
+
+    assert "DUPLICATE_INVOICE_NUMBER" in summary["exception_codes"]
+
+
+def test_a_purchase_order_must_be_on_the_allow_list_itself():
+    """I14: the bill being listed is not enough."""
+    listed, unlisted = uuid.uuid4(), uuid.uuid4()
+    with psycopg.connect(OWNER_URL) as conn:
+        _seed_fixture(conn, listed, resource_type="PURCHASE_ORDER")
+        conn.commit()
+        assert purchase_order_allow_listed(conn, _po([], PurchaseOrderID=str(listed))) is True
+        assert purchase_order_allow_listed(conn, _po([], PurchaseOrderID=str(unlisted))) is False
+        assert purchase_order_allow_listed(conn, None) is False
+
+
+def test_two_bills_with_the_same_number_reconciled_at_once_cannot_both_match():
+    """Each used to look for the other, find nothing because neither had
+    committed, and come back MATCHED. The second now waits for the first."""
+    first_id, second_id = uuid.uuid4(), uuid.uuid4()
+    number = f"INV-{first_id.hex[:6]}"
+    reference = f"PO-{first_id.hex[:8]}"
+    po = _po([_line("widget")], number=reference)
+    first_bill = _bill(first_id, number, [_line("widget")], ref=reference)
+    second_bill = _bill(second_id, number, [_line("widget")], ref=reference)
+
+    with psycopg.connect(OWNER_URL) as setup:
+        _seed_fixture(setup, first_id)
+        _seed_fixture(setup, second_id)
+        setup.commit()
+        fixtures = active_fixtures(setup)
+        first_run, _ = ingest_bill(setup, first_bill, fixtures, uuid.uuid4())
+        second_run, _ = ingest_bill(setup, second_bill, fixtures, uuid.uuid4())
+        setup.commit()
+
+    def reconcile(conn, run_id, bill):
+        return reconcile_run(
+            conn,
+            run_id=run_id,
+            correlation_id=uuid.uuid4(),
+            bill=bill,
+            purchase_order=po,
+            chart=CHART,
+            po_allow_listed=True,
+        )
+
+    second: dict = {}
+    with psycopg.connect(OWNER_URL) as a, psycopg.connect(OWNER_URL) as b:
+        first = reconcile(a, first_run, first_bill)  # holds the key, uncommitted
+
+        def other() -> None:
+            second["summary"] = reconcile(b, second_run, second_bill)
+            b.commit()
+
+        worker = threading.Thread(target=other)
+        worker.start()
+        worker.join(timeout=1.0)
+        blocked = worker.is_alive()
+        a.commit()
+        worker.join(timeout=10.0)
+
+    assert blocked, "the second reconcile did not wait for the first"
+    assert first["outcome"] == "MATCHED"
+    assert "DUPLICATE_INVOICE_NUMBER" in second["summary"]["exception_codes"]

@@ -88,9 +88,10 @@ async def interactions(request: Request) -> Response:
 
     from policy_service.integrations.slack_client import SlackClient
 
-    client = SlackClient(bot_token=settings.slack_bot_token or "")
-
-    with get_pool().connection() as conn:
+    with (
+        SlackClient(bot_token=settings.slack_bot_token or "") as client,
+        get_pool().connection() as conn,
+    ):
         try:
             result = triage.record_decision(
                 conn,

@@ -104,7 +104,9 @@ def _seed_wording_run(conn, bill_over=None):
         }
     )
 
-    result = reconcile(bill, order, chart_of_accounts=CHART, semantic_review_enabled=True)
+    result = reconcile(
+        bill, order, chart_of_accounts=CHART, po_allow_listed=True, semantic_review_enabled=True
+    )
     persist_reconciliation(
         conn,
         run_id=run_id,

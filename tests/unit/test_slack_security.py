@@ -37,6 +37,17 @@ def test_a_correctly_signed_request_is_accepted() -> None:
     assert ok and reason == "OK"
 
 
+def test_a_non_ascii_signature_is_rejected_not_an_error() -> None:
+    """compare_digest raises on a str with non-ASCII characters, which turned a
+    forged header into a 500 rather than a 401."""
+    now = time.time()
+    timestamp, _ = signed(now)
+    ok, reason = verify(
+        signing_secret=SECRET, timestamp=timestamp, signature="v0=caf\u00e9", body=BODY, now=now
+    )
+    assert not ok and reason == "SIGNATURE_MISMATCH"
+
+
 def test_a_tampered_body_is_rejected() -> None:
     now = time.time()
     timestamp, signature = signed(now)

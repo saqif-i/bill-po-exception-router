@@ -117,6 +117,7 @@ def po_of(
 
 
 def run(bill, po, **kw):
+    kw.setdefault("po_allow_listed", True)
     return reconcile(bill, po, chart_of_accounts=CHART, **kw)
 
 
@@ -192,7 +193,7 @@ def test_draft_purchase_order_is_not_eligible():
 
 
 def test_missing_purchase_order_is_review_not_unprocessable():
-    result = reconcile(bill_of([line("w")]), None, chart_of_accounts=CHART)
+    result = reconcile(bill_of([line("w")]), None, chart_of_accounts=CHART, po_allow_listed=False)
     assert result.outcome is Outcome.REVIEW_REQUIRED
     assert ExceptionCode.PO_NOT_FOUND in result.exception_codes
 
@@ -629,3 +630,9 @@ def test_a_duplicate_still_outranks_a_currency_difference():
 
     codes = [ExceptionCode.DUPLICATE_INVOICE_NUMBER, ExceptionCode.CURRENCY_MISMATCH]
     assert route(codes) is TriageDestination.DUPLICATE_REVIEW
+
+
+def test_a_purchase_order_off_the_allow_list_is_an_exception_and_closes_the_gate():
+    result = run(bill_of([line("w")]), po_of([line("w")]), po_allow_listed=False)
+    assert result.exception_codes == [ExceptionCode.PO_NOT_ALLOW_LISTED]
+    assert result.semantic_permitted is False

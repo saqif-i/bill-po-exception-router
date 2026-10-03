@@ -42,6 +42,17 @@ class SlackClient:
         if self._client is None:
             self._client = httpx.Client(timeout=self.timeout_seconds, verify=True)
 
+    # Built per request, so closed per request: an unclosed client keeps its
+    # connection pool, and its sockets, until garbage collection.
+    def close(self) -> None:
+        self._client.close()
+
+    def __enter__(self) -> SlackClient:
+        return self
+
+    def __exit__(self, *_exc: object) -> None:
+        self.close()
+
     def _call(self, url: str, payload: dict) -> PostOutcome:
         try:
             response = self._client.post(

@@ -364,7 +364,7 @@ def reconcile(
     chart_of_accounts: frozenset[str],
     tolerances: Tolerances | None = None,
     reference_present: bool | None = None,
-    po_allow_listed: bool = True,
+    po_allow_listed: bool,
     duplicate_invoice_key: str | None = None,
     duplicate_business_key: str | None = None,
     duplicate_invoice_hit: bool = False,

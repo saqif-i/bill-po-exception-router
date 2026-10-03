@@ -10,12 +10,17 @@ client-supplied cursor is a client-supplied opportunity to skip a bill.
 from __future__ import annotations
 
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
 from psycopg import Connection
 
-from policy_service.db.repository import find_duplicate_hits, persist_reconciliation
+from policy_service.db.repository import (
+    find_duplicate_hits,
+    lock_duplicate_keys,
+    persist_reconciliation,
+)
 from policy_service.domain.duplicates import business_key, invoice_number_key
 from policy_service.domain.ingestion import (
     bill_hash,
@@ -23,7 +28,11 @@ from policy_service.domain.ingestion import (
     ingestion_version_key,
 )
 from policy_service.domain.models import Bill, PurchaseOrder, Tolerances
-from policy_service.domain.normalisation import calendar_day, split_bill_reference
+from policy_service.domain.normalisation import (
+    calendar_day,
+    split_bill_reference,
+    xero_timestamp,
+)
 from policy_service.domain.reconciliation import reconcile
 from policy_service.integrations.xero_parsing import account_reference_hash
 
@@ -49,6 +58,53 @@ def active_fixtures(conn: Connection) -> dict[str, str]:
             "WHERE fixture_status = 'ACTIVE'"
         )
         return dict(cur.fetchall())
+
+
+@dataclass(frozen=True)
+class PageWalk:
+    truncated: bool
+    last_updated: datetime | None
+
+
+def walk_pages(
+    fetch_page: Callable[[int], list[dict]],
+    handle: Callable[[dict], None],
+    *,
+    page_size: int,
+    max_pages: int,
+) -> PageWalk:
+    """Read pages until one comes back short, or until the page cap.
+
+    `truncated` says the cap stopped the walk with bills possibly left unread.
+    `last_updated` is the newest UpdatedDateUTC seen; bills arrive oldest first,
+    so everything up to it has been read.
+    """
+    last_updated = None
+    for page in range(1, max_pages + 1):
+        invoices = fetch_page(page)
+        for raw in invoices:
+            handle(raw)
+            last_updated = xero_timestamp(raw.get("UpdatedDateUTC")) or last_updated
+        if len(invoices) < page_size:
+            return PageWalk(truncated=False, last_updated=last_updated)
+    return PageWalk(truncated=True, last_updated=last_updated)
+
+
+def purchase_order_allow_listed(conn: Connection, purchase_order: PurchaseOrder | None) -> bool:
+    """I14: the purchase order must itself be on the ACTIVE fixture allow-list.
+
+    The bill was checked at ingestion. Without this, a bill on the list could
+    still be reconciled against any purchase order in the organisation.
+    """
+    if purchase_order is None or purchase_order.purchase_order_id is None:
+        return False
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT 1 FROM seed_fixtures WHERE xero_resource_type = 'PURCHASE_ORDER' "
+            "AND fixture_status = 'ACTIVE' AND xero_resource_id = %s",
+            (purchase_order.purchase_order_id,),
+        )
+        return cur.fetchone() is not None
 
 
 def read_cursor(conn: Connection) -> datetime | None:
@@ -140,7 +196,7 @@ def reconcile_run(
     bill: Bill,
     purchase_order: PurchaseOrder | None,
     chart: frozenset[str],
-    po_allow_listed: bool = True,
+    po_allow_listed: bool,
     semantic_review_enabled: bool = False,
     tolerances: Tolerances | None = None,
 ) -> dict:
@@ -161,6 +217,7 @@ def reconcile_run(
     date_bucket = calendar_day(bill.date_string, bill.date) or datetime.now(UTC).date().isoformat()
     biz_key = business_key(contact_id, bill.total, bill.currency_code, date_bucket, po_reference)
 
+    lock_duplicate_keys(conn, invoice_key, biz_key)
     invoice_hit, business_hit = find_duplicate_hits(
         conn, run_id=run_id, invoice_key=invoice_key, business_key=biz_key
     )

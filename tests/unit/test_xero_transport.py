@@ -47,6 +47,14 @@ def test_a_history_note_path_is_not_on_the_list() -> None:
         assert_allowed("get_purchase_order", "GET", "/api.xro/2.0/Invoices/abc/History")
 
 
+def test_a_bill_can_be_fetched_by_id_but_not_its_history() -> None:
+    assert_allowed(
+        "get_invoice", "GET", "/api.xro/2.0/Invoices/521a0543-5885-4749-8ba3-40bf8a94a5bf"
+    )
+    with pytest.raises(OperationNotAllowedError):
+        assert_allowed("get_invoice", "GET", "/api.xro/2.0/Invoices/abc/History")
+
+
 # --- error classification --------------------------------------------------
 @pytest.mark.parametrize(
     ("status", "expected"),

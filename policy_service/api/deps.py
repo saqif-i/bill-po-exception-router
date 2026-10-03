@@ -18,6 +18,7 @@ from policy_service.integrations.xero_auth import (
     request_token,
 )
 from policy_service.integrations.xero_client import XeroReadClient
+from policy_service.integrations.xero_transport import RetrySchedule
 
 
 @lru_cache
@@ -36,6 +37,8 @@ def get_xero_client() -> XeroReadClient | None:
     http = httpx.Client(timeout=settings.xero_read_timeout_seconds)
     return XeroReadClient(
         token_provider=lambda: cache.get(lambda: request_token(http, credentials)),
+        invalidate_token=cache.invalidate,
         connect_timeout=settings.xero_connect_timeout_seconds,
         read_timeout=settings.xero_read_timeout_seconds,
+        schedule=RetrySchedule(max_attempts=settings.xero_max_attempts),
     )

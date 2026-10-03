@@ -108,7 +108,7 @@ def _seed(conn, bill_over=None):
         }
     )
 
-    result = reconcile(bill, order, chart_of_accounts=CHART)
+    result = reconcile(bill, order, chart_of_accounts=CHART, po_allow_listed=True)
     persist_reconciliation(
         conn,
         run_id=run_id,
@@ -318,3 +318,187 @@ def test_the_card_update_is_best_effort_and_the_decision_survives_its_failure():
 
     assert updated is False  # the card is stale
     assert decisions == 1  # the decision is not
+
+
+def _status(conn, run_id):
+    with conn.cursor() as cur:
+        cur.execute("SELECT workflow_status FROM runs WHERE run_id=%s", (run_id,))
+        return cur.fetchone()[0]
+
+
+@dataclass
+class ObservingSlack(FakeSlack):
+    """Looks at the database from the outside while the card is being posted."""
+
+    notify_conn: object = None
+    run_id: object = None
+    seen: dict = field(default_factory=dict)
+
+    def post_card(self, **kwargs) -> PostOutcome:
+        from psycopg import errors
+        from psycopg.pq import TransactionStatus
+
+        self.seen["transaction"] = self.notify_conn.info.transaction_status
+        self.seen["idle"] = TransactionStatus.IDLE
+        with psycopg.connect(OWNER_URL) as other:
+            self.seen["status"] = _status(other, self.run_id)
+            try:
+                with other.cursor() as cur:
+                    cur.execute(
+                        "SELECT 1 FROM runs WHERE run_id=%s FOR UPDATE NOWAIT", (self.run_id,)
+                    )
+                self.seen["locked"] = False
+            except errors.LockNotAvailable:
+                self.seen["locked"] = True
+            other.rollback()
+            try:
+                # A separate fake: re-entering this one would recurse if a
+                # regression let the second notify through.
+                triage.notify(
+                    other, run_id=self.run_id, correlation_id=uuid.uuid4(), client=FakeSlack()
+                )
+                self.seen["second_notify"] = "ran"
+            except triage.NotifyRefusedError as refused:
+                self.seen["second_notify"] = str(refused)
+        return super().post_card(**kwargs)
+
+
+def test_slack_is_called_with_no_transaction_or_lock_held():
+    """I12: nothing is held open across the call. I31: the run is claimed as
+    NOTIFY_PENDING first, so a second notify is refused rather than posting a
+    second card."""
+    with psycopg.connect(OWNER_URL) as conn:
+        run_id = _seed(conn)
+        conn.commit()
+        client = ObservingSlack(notify_conn=conn, run_id=run_id)
+        summary = triage.notify(conn, run_id=run_id, correlation_id=uuid.uuid4(), client=client)
+        conn.commit()
+        final = _status(conn, run_id)
+
+    assert client.seen["transaction"] == client.seen["idle"]
+    assert client.seen["locked"] is False
+    assert client.seen["status"] == "NOTIFY_PENDING"
+    assert client.seen["second_notify"] == "WORKFLOW_STATUS_NOTIFY_PENDING"
+    assert len(client.posts) == 1
+    assert summary["posted"] is True
+    assert final == "AWAITING_TRIAGE"
+
+
+def test_a_failed_post_returns_the_run_for_a_retry():
+    with psycopg.connect(OWNER_URL) as conn:
+        run_id = _seed(conn)
+        conn.commit()
+        failing = FakeSlack(post_result=PostOutcome(False, error="channel_not_found"))
+        triage.notify(conn, run_id=run_id, correlation_id=uuid.uuid4(), client=failing)
+        conn.commit()
+        after_failure = _status(conn, run_id)
+        retry = triage.notify(conn, run_id=run_id, correlation_id=uuid.uuid4(), client=FakeSlack())
+        conn.commit()
+        after_retry = _status(conn, run_id)
+
+    assert after_failure == "REVIEW_READY"
+    assert retry["posted"] is True
+    assert after_retry == "AWAITING_TRIAGE"
+
+
+class ExplodingSlack(FakeSlack):
+    def post_card(self, **kwargs) -> PostOutcome:
+        raise ValueError("Expecting value: line 1 column 1 (char 0)")
+
+
+def test_an_exception_from_slack_is_recorded_rather_than_stranding_the_run():
+    """The request may have gone out, so the outcome is unknown. Raising would
+    leave the run in NOTIFY_PENDING with nothing recorded."""
+    with psycopg.connect(OWNER_URL) as conn:
+        run_id = _seed(conn)
+        conn.commit()
+        summary = triage.notify(
+            conn, run_id=run_id, correlation_id=uuid.uuid4(), client=ExplodingSlack()
+        )
+        conn.commit()
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT post_status, post_error FROM slack_notifications WHERE run_id=%s",
+                (run_id,),
+            )
+            post_status, post_error = cur.fetchone()
+        final = _status(conn, run_id)
+
+    assert summary["posted"] is False
+    assert post_status == "POSSIBLE_DUPLICATE"
+    assert post_error == "ValueError"
+    assert final == "REVIEW_READY"
+
+
+def test_a_click_that_arrives_before_the_post_is_recorded_is_accepted():
+    """The card exists if someone clicked it, even if notify has not yet
+    recorded the post."""
+    with psycopg.connect(OWNER_URL) as conn:
+        run_id = _seed(conn)
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE runs SET workflow_status='NOTIFY_PENDING' WHERE run_id=%s", (run_id,)
+            )
+        conn.commit()
+        result = triage.record_decision(
+            conn,
+            run_id=run_id,
+            action=TriageAction.MARK_REVIEWED,
+            user_id="U123",
+            user_name="saqif",
+            interaction_id=f"i-{uuid.uuid4()}",
+            message_ts="1700000000.000100",
+        )
+        conn.commit()
+        final = _status(conn, run_id)
+
+    assert result["recorded"] is True
+    assert final == "COMPLETED"
+
+
+class WatchingUpdate(FakeSlack):
+    """Records whether a transaction is open while the card is updated."""
+
+    def __init__(self, conn) -> None:
+        super().__init__()
+        self.conn = conn
+        self.transaction_during_update = None
+
+    def update_card(self, **kwargs) -> PostOutcome:
+        self.transaction_during_update = self.conn.info.transaction_status
+        return super().update_card(**kwargs)
+
+
+def test_the_card_update_is_made_with_no_transaction_open():
+    """I12: the read that finds the card is committed before Slack is called."""
+    from psycopg.pq import TransactionStatus
+
+    with psycopg.connect(OWNER_URL) as conn:
+        run_id = _seed(conn)
+        conn.commit()
+        client = WatchingUpdate(conn)
+        triage.notify(conn, run_id=run_id, correlation_id=uuid.uuid4(), client=client)
+        conn.commit()
+        result = triage.record_decision(
+            conn,
+            run_id=run_id,
+            action=TriageAction.MARK_REVIEWED,
+            user_id="U1",
+            user_name=None,
+            interaction_id=f"i-{uuid.uuid4()}",
+            message_ts="1700000000.000100",
+        )
+        conn.commit()
+        updated = triage.update_card_best_effort(
+            conn,
+            run_id=run_id,
+            context=result["context"],
+            action=TriageAction.MARK_REVIEWED,
+            user_id="U1",
+            decided_at="01 Sep 2026, 10:00 UTC",
+            client=client,
+        )
+        conn.commit()
+
+    assert updated is True
+    assert client.transaction_during_update == TransactionStatus.IDLE

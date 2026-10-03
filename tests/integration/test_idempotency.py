@@ -128,3 +128,28 @@ def test_logs_carry_a_fingerprint_not_the_key():
     key = "a-very-secret-idempotency-key-value"
     assert key_fingerprint(key) != key
     assert len(key_fingerprint(key)) == 16
+
+
+def test_an_expired_lease_is_reclaimed():
+    """A claim abandoned mid-request must not block its key for good."""
+    key = _key()
+    with psycopg.connect(OWNER_URL) as conn:
+        first = _claim(conn, key)
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE idempotency_registry SET lease_expires_at = now() - interval '1 second' "
+                "WHERE ledger_id = %s",
+                (first.ledger_id,),
+            )
+        conn.commit()
+        again = _claim(conn, key)
+        conn.commit()
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT claim_generation FROM idempotency_registry WHERE ledger_id = %s",
+                (first.ledger_id,),
+            )
+            generation = cur.fetchone()[0]
+    assert again.replayed is False
+    assert again.ledger_id == first.ledger_id
+    assert generation == 1

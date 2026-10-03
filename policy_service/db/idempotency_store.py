@@ -7,6 +7,7 @@ behaviour table, which the tests follow row for row:
     -------------------------  ----------------------  --------------------
     none                       any                     claim and execute
     in progress, same hash     duplicate in flight     202 IN_PROGRESS
+    in progress, lease expired abandoned claim         atomic reclamation
     any state, different hash  key reuse               409 KEY_REUSED
     succeeded                  replay                  recorded body, 200
     failed, retryable          replay                  atomic reclamation
@@ -14,7 +15,7 @@ behaviour table, which the tests follow row for row:
 
 The registry is claimed BEFORE the domain mutation, in the same transaction, so
 a crash between claiming and working leaves a PROCESSING row with an expired
-lease rather than a silent gap.
+lease rather than a silent gap. A retry after the lease expires reclaims it.
 """
 
 from __future__ import annotations
@@ -98,7 +99,23 @@ def claim(
             raise ServiceError(code="IDEMPOTENCY_KEY_REUSED", status_code=409)
 
         if status == "PROCESSING":
-            raise ServiceError(code="IDEMPOTENCY_IN_PROGRESS", status_code=202)
+            # Reclaimed only once the lease has expired, so a request that is
+            # still working is never doubled. The conditional UPDATE decides
+            # between two callers racing for the same abandoned claim.
+            cur.execute(
+                """
+                UPDATE idempotency_registry
+                   SET owner_id=%s, locked_at=%s, lease_expires_at=%s,
+                       claim_generation=claim_generation+1,
+                       attempt_count=attempt_count+1, updated_at=now()
+                 WHERE ledger_id=%s AND status='PROCESSING' AND lease_expires_at < %s
+                RETURNING ledger_id
+                """,
+                (owner_id, now, now + timedelta(seconds=LEASE_SECONDS), existing_id, now),
+            )
+            if cur.fetchone() is None:
+                raise ServiceError(code="IDEMPOTENCY_IN_PROGRESS", status_code=202)
+            return Claim(existing_id)
 
         if status == "SUCCEEDED":
             return Claim(existing_id, True, result_status, summary)

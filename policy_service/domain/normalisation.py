@@ -92,6 +92,14 @@ def calendar_day(date_string: str | None, date: str | None) -> str | None:
     return None
 
 
+def xero_timestamp(value: str | None) -> datetime | None:
+    """A Xero /Date(ms+zzzz)/ value as an aware UTC datetime, or None."""
+    match = _XERO_DATE.match(value or "")
+    if not match:
+        return None
+    return datetime.fromtimestamp(int(match.group(1)) / 1000, UTC)
+
+
 def canonical_account_code(value: str | None) -> str | None:
     """Surrounding whitespace only.
 

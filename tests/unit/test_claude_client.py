@@ -45,3 +45,17 @@ def test_a_provider_error_status_is_provider_unavailable(status: int) -> None:
     result = _review(_client(lambda request: httpx.Response(status)))
     assert result.rejection.reason is RejectionReason.PROVIDER_UNAVAILABLE
     assert str(status) in result.rejection.detail
+
+
+def test_the_client_is_closed_after_use() -> None:
+    with ClaudeClient(api_key="test-key-not-real", model="m") as client:
+        pass
+    assert client._client.is_closed
+
+
+def test_the_slack_client_is_closed_after_use() -> None:
+    from policy_service.integrations.slack_client import SlackClient
+
+    with SlackClient(bot_token="test-slack-token-not-real") as client:
+        pass
+    assert client._client.is_closed

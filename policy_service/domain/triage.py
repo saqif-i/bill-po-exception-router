@@ -1,6 +1,6 @@
 """Notification and the human decision.
 
-Invariants I03 and I31.
+Invariants I03, I12 and I31.
 """
 
 from __future__ import annotations
@@ -17,6 +17,7 @@ from policy_service.integrations.slack_blocks import (
     build_decided_card,
     escape_mrkdwn,
 )
+from policy_service.integrations.slack_client import PostOutcome
 
 
 class NotifyRefusedError(RuntimeError):
@@ -56,6 +57,7 @@ def load_card_context(
                    rr.semantic_gate_reason
               FROM runs r JOIN reconciliation_results rr USING (run_id)
              WHERE r.run_id = %s
+               FOR UPDATE OF r
             """,
             (run_id,),
         )
@@ -131,6 +133,18 @@ def load_for_notification(conn: Connection, run_id: uuid.UUID) -> CardContext:
 def notify(conn: Connection, *, run_id: uuid.UUID, correlation_id: uuid.UUID, client) -> dict:
     """Post the card, then record what happened. Idempotent per run.
 
+    Three steps, so no transaction or lock is held while Slack is called (I12):
+
+    1. Lock the run, check it (I31), and move it to NOTIFY_PENDING. Committed,
+       which releases the lock. A second notify now sees NOTIFY_PENDING and is
+       refused, so the claim does what the lock did without being held.
+    2. Call Slack, with no transaction open.
+    3. Record the result. A posted card moves the run to AWAITING_TRIAGE.
+       Anything else returns it to REVIEW_READY so a retry can post.
+
+    A process that dies during step 2 leaves the run in NOTIFY_PENDING, which
+    the stuck-run check reports. See docs/runbook.md section 1.
+
     The idempotency check comes FIRST. Checking the workflow status before it
     would refuse a harmless second call, because the first call already moved
     the run to AWAITING_TRIAGE.
@@ -146,6 +160,13 @@ def notify(conn: Connection, *, run_id: uuid.UUID, correlation_id: uuid.UUID, cl
 
     context = load_for_notification(conn, run_id)
     channel = CHANNEL_FOR[context.destination]
+    with conn.cursor() as cur:
+        cur.execute(
+            "UPDATE runs SET workflow_status = 'NOTIFY_PENDING', updated_at = now() "
+            "WHERE run_id = %s AND workflow_status = 'REVIEW_READY'",
+            (run_id,),
+        )
+    conn.commit()  # releases the row lock before the call leaves the process
 
     blocks = build_card(
         run_id=str(run_id),
@@ -156,11 +177,16 @@ def notify(conn: Connection, *, run_id: uuid.UUID, correlation_id: uuid.UUID, cl
         semantic_gate_reason=context.semantic_gate_reason,
         human_review_reasons=context.human_review_reasons,
     )
-    outcome = client.post_card(
-        channel=channel,
-        blocks=blocks,
-        text=f"Bill {escape_mrkdwn(context.invoice_number)} needs review",
-    )
+    try:
+        outcome = client.post_card(
+            channel=channel,
+            blocks=blocks,
+            text=f"Bill {escape_mrkdwn(context.invoice_number)} needs review",
+        )
+    except Exception as exc:
+        # The request may have gone out, so this is unknown rather than failed.
+        # Raising here would leave the run in NOTIFY_PENDING with no record.
+        outcome = PostOutcome(False, error=type(exc).__name__, dispatch_unknown=True)
 
     status = (
         "POSTED" if outcome.ok else "POSSIBLE_DUPLICATE" if outcome.dispatch_unknown else "FAILED"
@@ -195,12 +221,11 @@ def notify(conn: Connection, *, run_id: uuid.UUID, correlation_id: uuid.UUID, cl
                 outcome.error or None,
             ),
         )
-        if outcome.ok:
-            cur.execute(
-                "UPDATE runs SET workflow_status = 'AWAITING_TRIAGE', updated_at = now() "
-                "WHERE run_id = %s AND workflow_status = 'REVIEW_READY'",
-                (run_id,),
-            )
+        cur.execute(
+            "UPDATE runs SET workflow_status = %s, updated_at = now() "
+            "WHERE run_id = %s AND workflow_status = 'NOTIFY_PENDING'",
+            ("AWAITING_TRIAGE" if outcome.ok else "REVIEW_READY", run_id),
+        )
 
     return {
         "posted": outcome.ok,
@@ -239,7 +264,11 @@ def record_decision(
         if cur.fetchone() is not None:
             return {"recorded": False, "reason": "ALREADY_RECORDED", "context": None}
 
-    context = load_card_context(conn, run_id, allowed_statuses=("AWAITING_TRIAGE", "REVIEW_READY"))
+    # NOTIFY_PENDING too: a click can only come from a card Slack has posted,
+    # and it can arrive before notify has recorded that post.
+    context = load_card_context(
+        conn, run_id, allowed_statuses=("AWAITING_TRIAGE", "NOTIFY_PENDING", "REVIEW_READY")
+    )
 
     with conn.cursor() as cur:
         cur.execute(
@@ -276,7 +305,8 @@ def record_decision(
 
         cur.execute(
             "UPDATE runs SET workflow_status = 'COMPLETED', updated_at = now() "
-            "WHERE run_id = %s AND workflow_status IN ('AWAITING_TRIAGE', 'REVIEW_READY')",
+            "WHERE run_id = %s "
+            "AND workflow_status IN ('AWAITING_TRIAGE', 'NOTIFY_PENDING', 'REVIEW_READY')",
             (run_id,),
         )
         cur.execute(
@@ -313,6 +343,7 @@ def update_card_best_effort(
             (run_id,),
         )
         row = cur.fetchone()
+    conn.commit()  # I12: the read is not held open across the Slack call
     if row is None or not row[1]:
         return False  # never posted, or posted with an unknown outcome
 

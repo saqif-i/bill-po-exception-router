@@ -55,8 +55,10 @@ def verify(
 
     expected = compute_signature(signing_secret, timestamp, body)
     # Constant time. `==` on a signature leaks a prefix through timing, which
-    # is enough to forge one given patience.
-    if not hmac.compare_digest(expected, signature):
+    # is enough to forge one given patience. Compared as bytes: compare_digest
+    # raises on a str with non-ASCII characters, which turned a forged header
+    # into a 500 instead of a 401.
+    if not hmac.compare_digest(expected.encode(), signature.encode()):
         return False, "SIGNATURE_MISMATCH"
 
     return True, "OK"

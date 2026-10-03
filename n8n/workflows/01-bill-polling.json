@@ -111,9 +111,8 @@
       "parameters": {
         "workflowId": {
           "__rl": true,
-          "value": "RyrUenBAcvGIDBf5",
+          "value": "REPLACE_WITH_02_WORKFLOW_ID",
           "mode": "list",
-          "cachedResultUrl": "/workflow/RyrUenBAcvGIDBf5",
           "cachedResultName": "02-bill-processing"
         },
         "workflowInputs": {

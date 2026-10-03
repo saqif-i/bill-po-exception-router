@@ -13,7 +13,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, Response
 
 from policy_service.api import errors, health, runs, slack
-from policy_service.api.limits import enforce_body_limit
+from policy_service.api.limits import BodyLimitMiddleware
 from policy_service.config import get_settings
 from policy_service.db import engine
 from policy_service.logging_config import configure_logging
@@ -36,7 +36,7 @@ app.include_router(runs.router)
 app.include_router(slack.router)
 
 
-app.middleware("http")(enforce_body_limit)
+app.add_middleware(BodyLimitMiddleware)
 
 
 @app.middleware("http")

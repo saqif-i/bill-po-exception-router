@@ -94,3 +94,41 @@ def test_ci_declares_no_third_party_secret() -> None:
 def test_committed_workflow_exports_are_valid_json() -> None:
     for path in (REPO / "n8n" / "workflows").glob("*.json"):
         json.loads(path.read_text())
+
+
+def test_every_service_call_in_bill_processing_checks_its_status() -> None:
+    """With neverError set, a 409 or 503 flows on as if it were data. Each call
+    must branch on statusCode, or a failure lands in Closed Without Review."""
+    workflow = json.loads((REPO / "n8n" / "workflows" / "02-bill-processing.json").read_text())
+    nodes = {n["name"]: n for n in workflow["nodes"]}
+    for name, node in nodes.items():
+        if node["type"] != "n8n-nodes-base.httpRequest":
+            continue
+        (target,) = [c["node"] for c in workflow["connections"][name]["main"][0]]
+        condition = nodes[target]["parameters"]["conditions"]["conditions"][0]
+        assert condition["leftValue"] == "={{ $json.statusCode }}", name
+
+
+def test_the_notify_key_does_not_depend_on_the_previous_node() -> None:
+    """After Semantic Review, $json is that node's response, which has no
+    run_id. A key built from it is "undefined-notify" for every bill."""
+    workflow = json.loads((REPO / "n8n" / "workflows" / "02-bill-processing.json").read_text())
+    (notify,) = [n for n in workflow["nodes"] if n["name"] == "Notify"]
+    (key,) = [
+        h["value"]
+        for h in notify["parameters"]["headerParameters"]["parameters"]
+        if h["name"] == "Idempotency-Key"
+    ]
+    assert "$('Reconcile')" in key
+
+
+def test_no_export_points_at_one_instance_sub_workflow() -> None:
+    """A sub-workflow id exists only on the instance that exported it. The
+    committed file carries the placeholder n8n/README.md tells you to replace."""
+    for path in sorted((REPO / "n8n" / "workflows").glob("*.json")):
+        for node in json.loads(path.read_text())["nodes"]:
+            if node["type"] != "n8n-nodes-base.executeWorkflow":
+                continue
+            reference = node["parameters"]["workflowId"]
+            assert reference["value"].startswith("REPLACE_WITH_"), path.name
+            assert "cachedResultUrl" not in reference, path.name

@@ -22,6 +22,7 @@ from policy_service.integrations.xero_errors import ErrorClass
 ALLOWED_OPERATIONS: dict[str, tuple[str, str]] = {
     "get_organisation": ("GET", r"^/api\.xro/2\.0/Organisation$"),
     "list_invoices": ("GET", r"^/api\.xro/2\.0/Invoices$"),
+    "get_invoice": ("GET", r"^/api\.xro/2\.0/Invoices/[0-9A-Fa-f-]{36}$"),
     "get_purchase_order": ("GET", r"^/api\.xro/2\.0/PurchaseOrders/[^/]+$"),
     "list_accounts": ("GET", r"^/api\.xro/2\.0/Accounts$"),
 }

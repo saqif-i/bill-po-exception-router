@@ -174,6 +174,23 @@ def persist_reconciliation(
     return result_id
 
 
+def lock_duplicate_keys(conn: Connection, *keys: str | None) -> None:
+    """Serialise the duplicate check per key until this transaction ends.
+
+    Without it, two bills with the same number reconciled at the same moment
+    each look for the other, find nothing because neither has committed, and
+    both come back MATCHED. A transaction-level advisory lock on each key makes
+    the second wait until the first has committed its key, then see it.
+
+    Keys are locked in sorted order, so two transactions sharing both keys
+    cannot deadlock. The locks release at commit or rollback, and the caller
+    makes no external call before then (I12).
+    """
+    with conn.cursor() as cur:
+        for key in sorted({k for k in keys if k}):
+            cur.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", (key,))
+
+
 def find_duplicate_hits(
     conn: Connection,
     *,
@@ -183,22 +200,27 @@ def find_duplicate_hits(
 ) -> tuple[bool, bool]:
     """Duplicate LOOKUPS live here so the engine stays pure.
 
-    A collision with a previously ingested run that is not this run raises the
-    exception. Comparing against itself would make every bill a duplicate of
-    itself.
+    A collision with a run for a DIFFERENT Xero bill raises the exception.
+    Earlier runs of this same bill are excluded too: a bill re-saved in Xero
+    gets a new run, and matching it against its own previous run would send
+    every edited bill to duplicate review.
     """
     invoice_hit = business_hit = False
     with conn.cursor() as cur:
         if invoice_key:
             cur.execute(
-                "SELECT 1 FROM runs WHERE duplicate_invoice_key = %s AND run_id <> %s LIMIT 1",
-                (invoice_key, run_id),
+                "SELECT 1 FROM runs WHERE duplicate_invoice_key = %s AND run_id <> %s "
+                "AND xero_invoice_id IS DISTINCT FROM "
+                "(SELECT xero_invoice_id FROM runs WHERE run_id = %s) LIMIT 1",
+                (invoice_key, run_id, run_id),
             )
             invoice_hit = cur.fetchone() is not None
         if business_key:
             cur.execute(
-                "SELECT 1 FROM runs WHERE duplicate_business_key = %s AND run_id <> %s LIMIT 1",
-                (business_key, run_id),
+                "SELECT 1 FROM runs WHERE duplicate_business_key = %s AND run_id <> %s "
+                "AND xero_invoice_id IS DISTINCT FROM "
+                "(SELECT xero_invoice_id FROM runs WHERE run_id = %s) LIMIT 1",
+                (business_key, run_id, run_id),
             )
             business_hit = cur.fetchone() is not None
     return invoice_hit, business_hit

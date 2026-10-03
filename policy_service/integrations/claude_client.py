@@ -58,6 +58,17 @@ class ClaudeClient:
         if self._client is None:
             self._client = httpx.Client(timeout=self.timeout_seconds, verify=True)
 
+    # Built per request, so closed per request: an unclosed client keeps its
+    # connection pool, and its sockets, until garbage collection.
+    def close(self) -> None:
+        self._client.close()
+
+    def __enter__(self) -> ClaudeClient:
+        return self
+
+    def __exit__(self, *_exc: object) -> None:
+        self.close()
+
     def review(
         self, *, purchase_order_line_description: str, bill_line_description: str
     ) -> ProviderResult:

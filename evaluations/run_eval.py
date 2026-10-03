@@ -88,7 +88,9 @@ def run_gate_dataset(tally: Tally) -> None:
     chart = frozenset({"0010", "0020"})
     for case in load("account_code_gate_v1"):
         bill, order = _documents(case)
-        result = reconcile(bill, order, chart_of_accounts=chart, semantic_review_enabled=True)
+        result = reconcile(
+            bill, order, chart_of_accounts=chart, po_allow_listed=True, semantic_review_enabled=True
+        )
         tally.record_gate_exclusion(case["id"], not result.semantic_permitted)
 
 
@@ -105,7 +107,10 @@ def run_semantics_dataset(tally: Tally, client, min_confidence: float) -> None:
         provider = client.review(purchase_order_line_description=po, bill_line_description=bill)
         if provider.rejection is not None:
             tally.record(
-                expected=case["expected"], actual=None, rejection=provider.rejection.reason.value
+                case_id=case["id"],
+                expected=case["expected"],
+                actual=None,
+                withheld=provider.rejection.reason.value,
             )
             continue
         outcome = validate(
@@ -116,10 +121,18 @@ def run_semantics_dataset(tally: Tally, client, min_confidence: float) -> None:
         )
         if isinstance(outcome, ValidatedRecommendation):
             tally.record(
-                expected=case["expected"], actual=outcome.recommendation.value, rejection=None
+                case_id=case["id"],
+                expected=case["expected"],
+                actual=outcome.recommendation.value,
+                withheld=None,
             )
         else:
-            tally.record(expected=case["expected"], actual=None, rejection=outcome.reason.value)
+            tally.record(
+                case_id=case["id"],
+                expected=case["expected"],
+                actual=None,
+                withheld=outcome.reason.value,
+            )
 
 
 def main() -> int:
@@ -139,9 +152,9 @@ def main() -> int:
         if not settings.anthropic_api_key:
             print("ANTHROPIC_API_KEY is required for --live", file=sys.stderr)
             return 2
-        client = ClaudeClient(api_key=settings.anthropic_api_key, model=settings.semantic_model_id)
         model = settings.semantic_model_id
-        run_semantics_dataset(tally, client, settings.semantic_min_confidence)
+        with ClaudeClient(api_key=settings.anthropic_api_key, model=model) as client:
+            run_semantics_dataset(tally, client, settings.semantic_min_confidence)
 
     report = tally.report() | {
         "model_id": model,

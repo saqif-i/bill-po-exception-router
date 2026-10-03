@@ -110,3 +110,11 @@ def test_liveness_does_not_depend_on_the_database() -> None:
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
     assert response.headers.get("X-Correlation-Id")
+
+
+def test_readiness_requires_every_migration_on_disk() -> None:
+    """Leaving one off let /readyz report ready before its tables existed."""
+    from policy_service.db.engine import REQUIRED_MIGRATIONS
+
+    on_disk = sorted(p.name for p in (REPO / "migrations").glob("*.sql"))
+    assert list(REQUIRED_MIGRATIONS) == on_disk

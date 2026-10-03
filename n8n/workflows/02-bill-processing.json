@@ -87,7 +87,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        -496,
+        -272,
         208
       ],
       "name": "Needs Review",
@@ -120,7 +120,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        -272,
+        -48,
         96
       ],
       "name": "Semantic Permitted",
@@ -154,7 +154,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.5,
       "position": [
-        -48,
+        176,
         0
       ],
       "name": "Semantic Review",
@@ -177,7 +177,7 @@
           "parameters": [
             {
               "name": "Idempotency-Key",
-              "value": "={{ $json.body.run_id + '-notify' }}"
+              "value": "={{ $('Reconcile').item.json.body.run_id + '-notify' }}"
             }
           ]
         },
@@ -194,7 +194,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.5,
       "position": [
-        176,
+        624,
         96
       ],
       "name": "Notify",
@@ -211,11 +211,160 @@
       "type": "n8n-nodes-base.noOp",
       "typeVersion": 1,
       "position": [
-        -272,
+        -48,
         320
       ],
       "name": "Closed Without Review",
       "id": "08a7f102-bef3-4bb3-9e5f-6e82bca42757"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "status-200",
+              "leftValue": "={{ $json.statusCode }}",
+              "rightValue": 200,
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -496,
+        208
+      ],
+      "name": "Reconcile Succeeded",
+      "id": "d5e4f5ba-5b1d-4f01-be6f-f7199f7769b3"
+    },
+    {
+      "parameters": {
+        "errorMessage": "=reconcile failed: {{ $json.statusCode }} {{ $json.body.error }}"
+      },
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [
+        -272,
+        432
+      ],
+      "name": "Reconcile Failed",
+      "id": "2b3253d7-7f16-4601-9c8e-62cc88165ab7"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "status-200",
+              "leftValue": "={{ $json.statusCode }}",
+              "rightValue": 200,
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        400,
+        0
+      ],
+      "name": "Semantic Review Succeeded",
+      "id": "dbcc0595-4893-42b4-8396-86aad3447eb2"
+    },
+    {
+      "parameters": {
+        "errorMessage": "=semantic review failed: {{ $json.statusCode }} {{ $json.body.error }}"
+      },
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [
+        624,
+        -112
+      ],
+      "name": "Semantic Review Failed",
+      "id": "d39c4384-af0e-480f-85a9-a881ee0ff71b"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "status-200",
+              "leftValue": "={{ $json.statusCode }}",
+              "rightValue": 200,
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        848,
+        96
+      ],
+      "name": "Notify Succeeded",
+      "id": "9f2022a0-a822-49e3-8d3d-b1a3efbde3f9"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1072,
+        0
+      ],
+      "name": "Card Posted",
+      "id": "e929958b-7e84-4e64-8d77-5640130239db"
+    },
+    {
+      "parameters": {
+        "errorMessage": "=notify failed: {{ $json.statusCode }} {{ $json.body.error }}"
+      },
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [
+        1072,
+        208
+      ],
+      "name": "Notify Failed",
+      "id": "67b129b7-a5cb-4688-9375-3f4becb3b1a4"
     }
   ],
   "pinData": {
@@ -278,7 +427,7 @@
       "main": [
         [
           {
-            "node": "Needs Review",
+            "node": "Reconcile Succeeded",
             "type": "main",
             "index": 0
           }
@@ -325,7 +474,72 @@
       "main": [
         [
           {
+            "node": "Semantic Review Succeeded",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reconcile Succeeded": {
+      "main": [
+        [
+          {
+            "node": "Needs Review",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reconcile Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Semantic Review Succeeded": {
+      "main": [
+        [
+          {
             "node": "Notify",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Semantic Review Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify": {
+      "main": [
+        [
+          {
+            "node": "Notify Succeeded",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Succeeded": {
+      "main": [
+        [
+          {
+            "node": "Card Posted",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Notify Failed",
             "type": "main",
             "index": 0
           }

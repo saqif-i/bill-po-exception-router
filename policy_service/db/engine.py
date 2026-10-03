@@ -13,10 +13,16 @@ from policy_service.config import get_settings
 
 _pool: ConnectionPool | None = None
 
-# Every migration this build expects to find applied.
-# Readiness reports MIGRATIONS_NOT_READY until every
-# listed migration is applied, so this list grows with the schema.
-REQUIRED_MIGRATIONS = ("001_core_schema.sql", "003_reconciliation.sql")
+# Every migration this build expects to find applied. Readiness reports
+# MIGRATIONS_NOT_READY until every one is, so a half-migrated database never
+# serves a request that needs a missing table. A test asserts this matches the
+# files in migrations/, so a new migration cannot be left off.
+REQUIRED_MIGRATIONS = (
+    "001_core_schema.sql",
+    "003_reconciliation.sql",
+    "004_semantic.sql",
+    "005_triage_and_slack.sql",
+)
 
 
 def get_pool() -> ConnectionPool:
@@ -52,7 +58,3 @@ def missing_migrations() -> list[str]:
     except Exception:
         return list(REQUIRED_MIGRATIONS)
     return [name for name in REQUIRED_MIGRATIONS if name not in applied]
-
-
-# 003 holds the reconciliation tables. Readiness reports MIGRATIONS_NOT_READY until it is
-# applied, so a half-migrated database never serves a reconciliation request.

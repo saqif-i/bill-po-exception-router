@@ -34,11 +34,25 @@ from policy_service.integrations.xero_client import XeroApiError
 router = APIRouter(prefix="/runs", tags=["runs"])
 
 MAX_BILLS_PER_POLL = 50
+# Pages read per poll. A backlog larger than this is read over several polls.
+MAX_POLL_PAGES = 20
 POLL_OVERLAP_MINUTES = 5
 
 
 def _body(request: Request, payload: dict[str, Any]) -> dict[str, Any]:
     return {**payload, "correlation_id": getattr(request.state, "correlation_id", None)}
+
+
+def _release_claim(ledger_id: uuid.UUID, error_code: str) -> None:
+    """Record a failed attempt as RETRYABLE so the same key can run again.
+
+    Written on a fresh connection because the request's own transaction has just
+    been rolled back. Without this the claim stays PROCESSING, and every retry
+    with the same key gets IN_PROGRESS until the lease expires.
+    """
+    with get_pool().connection() as other:
+        idempotency_store.fail(other, ledger_id, error_class="RETRYABLE", error_code=error_code)
+        other.commit()
 
 
 @router.post("/poll")
@@ -48,8 +62,10 @@ def poll(request: Request, principal: str = Depends(require_internal_bearer)) ->
     The service owns the watermark. n8n sends no cursor and no cutoff, because a
     client-supplied cursor is a client-supplied opportunity to skip a bill.
 
-    The cursor advances only after a poll completes successfully, so a failed or
-    truncated poll skips nothing.
+    Pages are read until one comes back short. A complete poll moves the cursor
+    to when it started. A poll that hits the page cap moves it only as far as
+    the last bill it received, and a failed poll leaves it alone, so neither
+    skips a bill.
     """
     from datetime import UTC, datetime
 
@@ -86,13 +102,24 @@ def poll(request: Request, principal: str = Depends(require_internal_bearer)) ->
 
         try:
             mark = poller.read_cursor(conn)
-            payload = client.list_invoices(
-                modified_since=mark.isoformat() if mark else None,
-                max_records=MAX_BILLS_PER_POLL,
-            )
             fixtures = poller.active_fixtures(conn)
+            # I12: nothing stays open while Xero is paged. Every page is read
+            # first, then the runs and the cursor are written in one transaction.
+            conn.commit()
 
-            for raw in payload.get("Invoices", []):
+            def fetch_page(page: int) -> list[dict]:
+                payload = client.list_invoices(
+                    modified_since=mark.isoformat() if mark else None,
+                    max_records=MAX_BILLS_PER_POLL,
+                    page=page,
+                )
+                return payload.get("Invoices", [])
+
+            received: list[dict] = []
+            walk = poller.walk_pages(
+                fetch_page, received.append, page_size=MAX_BILLS_PER_POLL, max_pages=MAX_POLL_PAGES
+            )
+            for raw in received:
                 report.polled += 1
                 bill = Bill.model_validate(raw)
                 run_id, reason = poller.ingest_bill(conn, bill, fixtures, correlation_id)
@@ -104,24 +131,28 @@ def poll(request: Request, principal: str = Depends(require_internal_bearer)) ->
                 else:
                     report.skipped_unchanged += 1
 
-            poller.advance_cursor(conn, started_at, POLL_OVERLAP_MINUTES)
-            report.cursor_advanced = True
+            truncated = walk.truncated
+            if not truncated:
+                poller.advance_cursor(conn, started_at, POLL_OVERLAP_MINUTES)
+                report.cursor_advanced = True
+            elif walk.last_updated is not None:
+                # Everything up to the last bill received has been read. The
+                # rest is picked up next poll.
+                poller.advance_cursor(conn, walk.last_updated, POLL_OVERLAP_MINUTES)
+                report.cursor_advanced = True
             summary = {
                 "polled": report.polled,
                 "ingested": report.ingested,
                 "skipped_not_allow_listed": report.skipped_not_allow_listed,
                 "skipped_unchanged": report.skipped_unchanged,
+                "truncated": truncated,
                 "run_ids": report.run_ids,
             }
             idempotency_store.complete(conn, claim.ledger_id, status_code=200, summary=summary)
             conn.commit()
         except Exception:
             conn.rollback()
-            with get_pool().connection() as other:
-                idempotency_store.fail(
-                    other, claim.ledger_id, error_class="RETRYABLE", error_code="POLL_FAILED"
-                )
-                other.commit()
+            _release_claim(claim.ledger_id, "POLL_FAILED")
             raise
 
     return JSONResponse(status_code=200, content=_body(request, summary))
@@ -172,14 +203,13 @@ def reconcile_run(
                     (run_id,),
                 )
                 row = cur.fetchone()
+            # I12: nothing stays open across the Xero calls below. Everything
+            # is read first, then the decision is written in one transaction.
+            conn.commit()
             if row is None:
                 raise ServiceError(code="RUN_NOT_FOUND", status_code=404)
 
-            invoice = client.list_invoices(modified_since=None, max_records=MAX_BILLS_PER_POLL)
-            match = next(
-                (i for i in invoice.get("Invoices", []) if str(i.get("InvoiceID")) == str(row[0])),
-                None,
-            )
+            match = client.get_invoice(str(row[0]))
             if match is None:
                 raise ServiceError(code="BILL_NO_LONGER_AVAILABLE", status_code=409)
 
@@ -192,6 +222,7 @@ def reconcile_run(
                 order = client.find_purchase_order(reference)
                 if order is not None:
                     purchase_order = PurchaseOrder.model_validate(order)
+            chart = client.chart_of_accounts()
 
             summary = poller.reconcile_run(
                 conn,
@@ -199,18 +230,15 @@ def reconcile_run(
                 correlation_id=correlation_id,
                 bill=bill,
                 purchase_order=purchase_order,
-                chart=client.chart_of_accounts(),
+                po_allow_listed=poller.purchase_order_allow_listed(conn, purchase_order),
+                chart=chart,
                 semantic_review_enabled=get_settings().semantic_review_enabled,
             )
             idempotency_store.complete(conn, claim.ledger_id, status_code=200, summary=summary)
             conn.commit()
         except Exception as exc:
             conn.rollback()
-            with get_pool().connection() as other:
-                idempotency_store.fail(
-                    other, claim.ledger_id, error_class="RETRYABLE", error_code="RECONCILE_FAILED"
-                )
-                other.commit()
+            _release_claim(claim.ledger_id, "RECONCILE_FAILED")
             if isinstance(exc, XeroApiError | httpx.HTTPError):
                 raise ServiceError(code="XERO_UNAVAILABLE", status_code=503) from exc
             raise
@@ -264,21 +292,28 @@ def semantic_review(
             timeout_seconds=settings.semantic_timeout_seconds,
         )
         try:
-            summary = semantic.review(
-                conn,
-                run_id=run_id,
-                correlation_id=correlation_id,
-                client=client,
-                min_confidence=settings.semantic_min_confidence,
-                enabled_flag=settings.semantic_review_enabled,
-            )
-        except semantic.GateRefusedError as refused:
-            # Not an error. The gate doing its job, recorded and returned, so
-            # n8n carries on to notification rather than treating it as failure.
-            summary = {"applied": False, "gate_refused": str(refused)}
+            try:
+                summary = semantic.review(
+                    conn,
+                    run_id=run_id,
+                    correlation_id=correlation_id,
+                    client=client,
+                    min_confidence=settings.semantic_min_confidence,
+                    enabled_flag=settings.semantic_review_enabled,
+                )
+            except semantic.GateRefusedError as refused:
+                # Not an error. The gate doing its job, recorded and returned, so
+                # n8n carries on to notification rather than treating it as failure.
+                summary = {"applied": False, "gate_refused": str(refused)}
 
-        idempotency_store.complete(conn, claim.ledger_id, status_code=200, summary=summary)
-        conn.commit()
+            idempotency_store.complete(conn, claim.ledger_id, status_code=200, summary=summary)
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            _release_claim(claim.ledger_id, "SEMANTIC_REVIEW_FAILED")
+            raise
+        finally:
+            client.close()
 
     return JSONResponse(status_code=200, content=_body(request, summary))
 
@@ -319,18 +354,32 @@ def notify(
             )
         conn.commit()
 
+        slack = SlackClient(bot_token=settings.slack_bot_token)
         try:
             summary = triage.notify(
                 conn,
                 run_id=run_id,
                 correlation_id=correlation_id,
-                client=SlackClient(bot_token=settings.slack_bot_token),
+                client=slack,
             )
+            idempotency_store.complete(conn, claim.ledger_id, status_code=200, summary=summary)
+            conn.commit()
         except triage.NotifyRefusedError as refused:
-            # The ordering gate doing its job, not a failure.
-            summary = {"posted": False, "notify_refused": str(refused)}
-
-        idempotency_store.complete(conn, claim.ledger_id, status_code=200, summary=summary)
-        conn.commit()
+            # The ordering gate doing its job, but no card was posted, so a
+            # person must hear about it and the same key must be able to run
+            # again once the run is ready. Recorded as success, the refusal
+            # would be replayed for good.
+            conn.rollback()
+            _release_claim(claim.ledger_id, "NOTIFY_REFUSED")
+            return JSONResponse(
+                status_code=409,
+                content=_body(request, {"error": "NOTIFY_REFUSED", "reason": str(refused)}),
+            )
+        except Exception:
+            conn.rollback()
+            _release_claim(claim.ledger_id, "NOTIFY_FAILED")
+            raise
+        finally:
+            slack.close()
 
     return JSONResponse(status_code=200, content=_body(request, summary))
