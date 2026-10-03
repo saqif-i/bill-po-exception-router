@@ -12,6 +12,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 
@@ -160,9 +161,12 @@ class XeroReadClient:
         return invoices[0] if invoices else None
 
     def get_purchase_order(self, number: str) -> dict:
+        # Encoded, because a reference may contain "/" (PO_REFERENCE_PATTERN
+        # allows it). Unencoded, "PO-1/2" became two path segments, the
+        # allow-list refused it, and the run failed the same way on every retry.
         return self._get(
             "get_purchase_order",
-            f"/api.xro/2.0/PurchaseOrders/{number}",
+            f"/api.xro/2.0/PurchaseOrders/{quote(number, safe='')}",
             {"unitdp": 4},
         )
 

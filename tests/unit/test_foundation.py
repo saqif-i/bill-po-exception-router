@@ -132,3 +132,14 @@ def test_no_export_points_at_one_instance_sub_workflow() -> None:
             reference = node["parameters"]["workflowId"]
             assert reference["value"].startswith("REPLACE_WITH_"), path.name
             assert "cachedResultUrl" not in reference, path.name
+
+
+def test_notify_succeeded_requires_a_card_to_exist() -> None:
+    """A 200 alone is not proof a card was posted."""
+    workflow = json.loads((REPO / "n8n" / "workflows" / "02-bill-processing.json").read_text())
+    (node,) = [n for n in workflow["nodes"] if n["name"] == "Notify Succeeded"]
+    conditions = node["parameters"]["conditions"]
+    assert conditions["combinator"] == "and"
+    left = [c["leftValue"] for c in conditions["conditions"]]
+    assert "={{ $json.statusCode }}" in left
+    assert any("body.posted" in v and "body.already" in v for v in left)

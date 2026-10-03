@@ -10,6 +10,7 @@ a GET.
 
 from __future__ import annotations
 
+import math
 import random
 import re
 from dataclasses import dataclass
@@ -81,7 +82,22 @@ def parse_retry_after(value: str | None) -> float | None:
         seconds = float(str(value).strip())
     except (TypeError, ValueError):
         return None
+    # "inf" and "nan" parse as floats but are not a delay.
+    if not math.isfinite(seconds):
+        return None
     return seconds if seconds > 0 else None
+
+
+def _not_before(now: datetime, seconds: float) -> datetime:
+    """now + seconds, or the latest representable time if that overflows.
+
+    Clamping to the maximum can only make the wait longer, never shorter, so a
+    huge Retry-After is still honoured (I13) without crashing the call.
+    """
+    try:
+        return now + timedelta(seconds=seconds)
+    except OverflowError:
+        return datetime.max.replace(tzinfo=UTC)
 
 
 def next_retry(
@@ -115,7 +131,7 @@ def next_retry(
     if seconds is not None:
         return RetryDecision(
             should_retry=True,
-            earliest_retry_at=now + timedelta(seconds=seconds),
+            earliest_retry_at=_not_before(now, seconds),
             # Release rather than block, without changing the time.
             release_work=seconds > schedule.worker_max_sleep_seconds,
             raise_alert=seconds > schedule.retry_after_alert_threshold_seconds,

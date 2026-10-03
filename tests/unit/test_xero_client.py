@@ -19,11 +19,13 @@ class Scripted:
     def __init__(self, *answers) -> None:
         self.answers = list(answers)
         self.requests = 0
+        self.paths: list[str] = []
         self.sleeps: list[float] = []
         self.invalidations = 0
 
     def __call__(self, request: httpx.Request) -> httpx.Response:
         self.requests += 1
+        self.paths.append(request.url.raw_path.decode())
         answer = self.answers.pop(0) if len(self.answers) > 1 else self.answers[0]
         if isinstance(answer, Exception):
             raise answer
@@ -151,3 +153,13 @@ def test_a_second_401_is_a_real_credential_failure() -> None:
     assert exc.value.error_class is ErrorClass.AUTH_FAILURE
     assert script.invalidations == 1
     assert script.requests == 2
+
+
+def test_a_purchase_order_number_containing_a_slash_is_encoded() -> None:
+    """Unencoded, "PO-1/2" was two path segments, the allow-list refused it,
+    and the run failed the same way on every retry."""
+    body = '{"PurchaseOrders": [{"PurchaseOrderNumber": "PO-1/2"}]}'
+    script = Scripted(httpx.Response(200, text=body))
+    order = script.client().find_purchase_order("PO-1/2")
+    assert order["PurchaseOrderNumber"] == "PO-1/2"
+    assert script.paths[0].startswith("/api.xro/2.0/PurchaseOrders/PO-1%2F2")

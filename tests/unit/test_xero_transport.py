@@ -55,6 +55,26 @@ def test_a_bill_can_be_fetched_by_id_but_not_its_history() -> None:
         assert_allowed("get_invoice", "GET", "/api.xro/2.0/Invoices/abc/History")
 
 
+@pytest.mark.parametrize("value", ["inf", "-inf", "nan", "Infinity"])
+def test_a_non_finite_retry_after_is_malformed(value) -> None:
+    assert parse_retry_after(value) is None
+
+
+@pytest.mark.parametrize("value", ["1000000000000", "1e12", "1e300"])
+def test_a_retry_after_too_large_to_represent_is_clamped_not_shortened(value) -> None:
+    """It used to overflow the date arithmetic and crash the call with a 500."""
+    decision = next_retry(
+        attempt_count=1,
+        error_class=ErrorClass.RETRYABLE,
+        retry_after_header=value,
+        schedule=SCHEDULE,
+        now=NOW,
+    )
+    assert decision.should_retry is True
+    assert decision.release_work is True
+    assert decision.earliest_retry_at == datetime.max.replace(tzinfo=UTC)
+
+
 # --- error classification --------------------------------------------------
 @pytest.mark.parametrize(
     ("status", "expected"),

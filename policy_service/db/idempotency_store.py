@@ -8,6 +8,10 @@ behaviour table, which the tests follow row for row:
     none                       any                     claim and execute
     in progress, same hash     duplicate in flight     202 IN_PROGRESS
     in progress, lease expired abandoned claim         atomic reclamation
+
+Every reclamation increments claim_generation. complete() and fail() write
+only for the current generation, so a request that outlived its lease
+cannot overwrite the result of the one that replaced it.
     any state, different hash  key reuse               409 KEY_REUSED
     succeeded                  replay                  recorded body, 200
     failed, retryable          replay                  atomic reclamation
@@ -38,6 +42,10 @@ class Claim:
     replayed: bool = False
     result_status: int | None = None
     result_summary: dict | None = None
+    # Which holder this is. Every takeover increments it, and complete() and
+    # fail() write only if it still matches, so a request that outlived its
+    # lease cannot overwrite the result of the request that replaced it.
+    generation: int = 0
 
 
 def claim(
@@ -67,7 +75,7 @@ def claim(
                 attempt_count
             ) VALUES (%s, %s, %s, %s, %s, 'PROCESSING', %s, 0, %s, %s, 1)
             ON CONFLICT (scope, idempotency_key) DO NOTHING
-            RETURNING ledger_id
+            RETURNING ledger_id, claim_generation
             """,
             (
                 ledger_id,
@@ -82,7 +90,7 @@ def claim(
         )
         row = cur.fetchone()
         if row is not None:
-            return Claim(ledger_id=row[0])
+            return Claim(ledger_id=row[0], generation=row[1])
 
         # Someone holds it. Read their row and answer from the table above.
         cur.execute(
@@ -109,13 +117,14 @@ def claim(
                        claim_generation=claim_generation+1,
                        attempt_count=attempt_count+1, updated_at=now()
                  WHERE ledger_id=%s AND status='PROCESSING' AND lease_expires_at < %s
-                RETURNING ledger_id
+                RETURNING claim_generation
                 """,
                 (owner_id, now, now + timedelta(seconds=LEASE_SECONDS), existing_id, now),
             )
-            if cur.fetchone() is None:
+            taken = cur.fetchone()
+            if taken is None:
                 raise ServiceError(code="IDEMPOTENCY_IN_PROGRESS", status_code=202)
-            return Claim(existing_id)
+            return Claim(existing_id, generation=taken[0])
 
         if status == "SUCCEEDED":
             return Claim(existing_id, True, result_status, summary)
@@ -126,22 +135,28 @@ def claim(
                 UPDATE idempotency_registry
                    SET status='PROCESSING', owner_id=%s, locked_at=%s,
                        lease_expires_at=%s, attempt_count=attempt_count+1,
+                       claim_generation=claim_generation+1,
                        error_class=NULL, error_code=NULL,
                        completed_at=NULL, retained_until=NULL, updated_at=now()
                  WHERE ledger_id=%s AND status='FAILED'
-                RETURNING ledger_id
+                RETURNING claim_generation
                 """,
                 (owner_id, now, now + timedelta(seconds=LEASE_SECONDS), existing_id),
             )
-            if cur.fetchone() is None:
+            taken = cur.fetchone()
+            if taken is None:
                 raise ServiceError(code="IDEMPOTENCY_IN_PROGRESS", status_code=202)
-            return Claim(existing_id)
+            return Claim(existing_id, generation=taken[0])
 
         # FAILED and PERMANENT. Never re-executed.
         raise ServiceError(code="IDEMPOTENCY_PERMANENT_FAILURE", status_code=409)
 
 
-def complete(conn: Connection, ledger_id: uuid.UUID, *, status_code: int, summary: dict) -> None:
+def complete(
+    conn: Connection, ledger_id: uuid.UUID, *, generation: int, status_code: int, summary: dict
+) -> bool:
+    """Record success, if this holder still owns the claim. False when a later
+    generation has taken it over, in which case nothing is written."""
     now = datetime.now(UTC)
     with conn.cursor() as cur:
         cur.execute(
@@ -150,13 +165,25 @@ def complete(conn: Connection, ledger_id: uuid.UUID, *, status_code: int, summar
                SET status='SUCCEEDED', owner_id=NULL, locked_at=NULL,
                    lease_expires_at=NULL, result_status=%s, result_summary=%s,
                    completed_at=%s, retained_until=%s, updated_at=now()
-             WHERE ledger_id=%s
+             WHERE ledger_id=%s AND claim_generation=%s AND status='PROCESSING'
             """,
-            (status_code, _json(summary), now, now + timedelta(days=RETENTION_DAYS), ledger_id),
+            (
+                status_code,
+                _json(summary),
+                now,
+                now + timedelta(days=RETENTION_DAYS),
+                ledger_id,
+                generation,
+            ),
         )
+        return cur.rowcount == 1
 
 
-def fail(conn: Connection, ledger_id: uuid.UUID, *, error_class: str, error_code: str) -> None:
+def fail(
+    conn: Connection, ledger_id: uuid.UUID, *, generation: int, error_class: str, error_code: str
+) -> bool:
+    """Record failure, if this holder still owns the claim. Same fencing as
+    complete()."""
     now = datetime.now(UTC)
     with conn.cursor() as cur:
         cur.execute(
@@ -165,10 +192,18 @@ def fail(conn: Connection, ledger_id: uuid.UUID, *, error_class: str, error_code
                SET status='FAILED', error_class=%s, error_code=%s,
                    owner_id=NULL, locked_at=NULL, lease_expires_at=NULL,
                    completed_at=%s, retained_until=%s, updated_at=now()
-             WHERE ledger_id=%s
+             WHERE ledger_id=%s AND claim_generation=%s AND status='PROCESSING'
             """,
-            (error_class, error_code, now, now + timedelta(days=RETENTION_DAYS), ledger_id),
+            (
+                error_class,
+                error_code,
+                now,
+                now + timedelta(days=RETENTION_DAYS),
+                ledger_id,
+                generation,
+            ),
         )
+        return cur.rowcount == 1
 
 
 def _json(value: dict):

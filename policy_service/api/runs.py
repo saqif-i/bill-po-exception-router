@@ -30,6 +30,8 @@ from policy_service.db.engine import get_pool
 from policy_service.domain import poller
 from policy_service.domain.models import Bill, PurchaseOrder
 from policy_service.integrations.xero_client import XeroApiError
+from policy_service.integrations.xero_errors import ErrorClass
+from policy_service.integrations.xero_transport import OperationNotAllowedError
 
 router = APIRouter(prefix="/runs", tags=["runs"])
 
@@ -43,16 +45,43 @@ def _body(request: Request, payload: dict[str, Any]) -> dict[str, Any]:
     return {**payload, "correlation_id": getattr(request.state, "correlation_id", None)}
 
 
-def _release_claim(ledger_id: uuid.UUID, error_code: str) -> None:
-    """Record a failed attempt as RETRYABLE so the same key can run again.
+def _release_claim(
+    claim: idempotency_store.Claim, error_code: str, *, permanent: bool = False
+) -> None:
+    """Record a failed attempt so the key's next use behaves correctly.
+
+    RETRYABLE lets the same key run again. PERMANENT is for a request that will
+    fail the same way every time, so retrying it only repeats the failure.
 
     Written on a fresh connection because the request's own transaction has just
     been rolled back. Without this the claim stays PROCESSING, and every retry
     with the same key gets IN_PROGRESS until the lease expires.
     """
     with get_pool().connection() as other:
-        idempotency_store.fail(other, ledger_id, error_class="RETRYABLE", error_code=error_code)
+        idempotency_store.fail(
+            other,
+            claim.ledger_id,
+            generation=claim.generation,
+            error_class="PERMANENT" if permanent else "RETRYABLE",
+            error_code=error_code,
+        )
         other.commit()
+
+
+def _xero_failure(exc: Exception) -> ServiceError | None:
+    """The response for a Xero failure, or None if `exc` is not one.
+
+    A rejected request (a 400, a 404 on something other than a lookup, or a
+    path the allow-list refuses) fails the same way on every retry, so it is a
+    422 and permanent. Anything else from Xero is a 503 and worth retrying.
+    """
+    if isinstance(exc, OperationNotAllowedError) or (
+        isinstance(exc, XeroApiError) and exc.error_class is ErrorClass.PERMANENT
+    ):
+        return ServiceError(code="XERO_REJECTED_REQUEST", status_code=422)
+    if isinstance(exc, XeroApiError | httpx.HTTPError):
+        return ServiceError(code="XERO_UNAVAILABLE", status_code=503)
+    return None
 
 
 @router.post("/poll")
@@ -62,7 +91,8 @@ def poll(request: Request, principal: str = Depends(require_internal_bearer)) ->
     The service owns the watermark. n8n sends no cursor and no cutoff, because a
     client-supplied cursor is a client-supplied opportunity to skip a bill.
 
-    Pages are read until one comes back short. A complete poll moves the cursor
+    Bills are read oldest first, re-querying from the newest one seen, until a
+    query comes back short. A complete poll moves the cursor
     to when it started. A poll that hits the page cap moves it only as far as
     the last bill it received, and a failed poll leaves it alone, so neither
     skips a bill.
@@ -107,9 +137,9 @@ def poll(request: Request, principal: str = Depends(require_internal_bearer)) ->
             # first, then the runs and the cursor are written in one transaction.
             conn.commit()
 
-            def fetch_page(page: int) -> list[dict]:
+            def fetch_page(since, page: int) -> list[dict]:
                 payload = client.list_invoices(
-                    modified_since=mark.isoformat() if mark else None,
+                    modified_since=since.isoformat() if since else None,
                     max_records=MAX_BILLS_PER_POLL,
                     page=page,
                 )
@@ -117,7 +147,11 @@ def poll(request: Request, principal: str = Depends(require_internal_bearer)) ->
 
             received: list[dict] = []
             walk = poller.walk_pages(
-                fetch_page, received.append, page_size=MAX_BILLS_PER_POLL, max_pages=MAX_POLL_PAGES
+                fetch_page,
+                received.append,
+                since=mark,
+                page_size=MAX_BILLS_PER_POLL,
+                max_pages=MAX_POLL_PAGES,
             )
             for raw in received:
                 report.polled += 1
@@ -148,11 +182,21 @@ def poll(request: Request, principal: str = Depends(require_internal_bearer)) ->
                 "truncated": truncated,
                 "run_ids": report.run_ids,
             }
-            idempotency_store.complete(conn, claim.ledger_id, status_code=200, summary=summary)
+            idempotency_store.complete(
+                conn,
+                claim.ledger_id,
+                generation=claim.generation,
+                status_code=200,
+                summary=summary,
+            )
             conn.commit()
-        except Exception:
+        except Exception as exc:
             conn.rollback()
-            _release_claim(claim.ledger_id, "POLL_FAILED")
+            failure = _xero_failure(exc)
+            permanent = failure is not None and failure.status_code == 422
+            _release_claim(claim, "POLL_FAILED", permanent=permanent)
+            if failure is not None:
+                raise failure from exc
             raise
 
     return JSONResponse(status_code=200, content=_body(request, summary))
@@ -234,13 +278,21 @@ def reconcile_run(
                 chart=chart,
                 semantic_review_enabled=get_settings().semantic_review_enabled,
             )
-            idempotency_store.complete(conn, claim.ledger_id, status_code=200, summary=summary)
+            idempotency_store.complete(
+                conn,
+                claim.ledger_id,
+                generation=claim.generation,
+                status_code=200,
+                summary=summary,
+            )
             conn.commit()
         except Exception as exc:
             conn.rollback()
-            _release_claim(claim.ledger_id, "RECONCILE_FAILED")
-            if isinstance(exc, XeroApiError | httpx.HTTPError):
-                raise ServiceError(code="XERO_UNAVAILABLE", status_code=503) from exc
+            failure = _xero_failure(exc)
+            permanent = failure is not None and failure.status_code == 422
+            _release_claim(claim, "RECONCILE_FAILED", permanent=permanent)
+            if failure is not None:
+                raise failure from exc
             raise
 
     return JSONResponse(status_code=200, content=_body(request, summary))
@@ -306,11 +358,17 @@ def semantic_review(
                 # n8n carries on to notification rather than treating it as failure.
                 summary = {"applied": False, "gate_refused": str(refused)}
 
-            idempotency_store.complete(conn, claim.ledger_id, status_code=200, summary=summary)
+            idempotency_store.complete(
+                conn,
+                claim.ledger_id,
+                generation=claim.generation,
+                status_code=200,
+                summary=summary,
+            )
             conn.commit()
         except Exception:
             conn.rollback()
-            _release_claim(claim.ledger_id, "SEMANTIC_REVIEW_FAILED")
+            _release_claim(claim, "SEMANTIC_REVIEW_FAILED")
             raise
         finally:
             client.close()
@@ -362,7 +420,25 @@ def notify(
                 correlation_id=correlation_id,
                 client=slack,
             )
-            idempotency_store.complete(conn, claim.ledger_id, status_code=200, summary=summary)
+            if not summary.get("posted") and not summary.get("already"):
+                # No card exists, or whether one does is unknown. Keep what
+                # notify recorded, which includes returning the run to
+                # REVIEW_READY, then release the key so a retry posts again.
+                # Recorded as success, the failure would be replayed for good
+                # and nobody would hear about it.
+                conn.commit()
+                _release_claim(claim, "CARD_NOT_POSTED")
+                return JSONResponse(
+                    status_code=502,
+                    content=_body(request, {**summary, "error": "CARD_NOT_POSTED"}),
+                )
+            idempotency_store.complete(
+                conn,
+                claim.ledger_id,
+                generation=claim.generation,
+                status_code=200,
+                summary=summary,
+            )
             conn.commit()
         except triage.NotifyRefusedError as refused:
             # The ordering gate doing its job, but no card was posted, so a
@@ -370,14 +446,14 @@ def notify(
             # again once the run is ready. Recorded as success, the refusal
             # would be replayed for good.
             conn.rollback()
-            _release_claim(claim.ledger_id, "NOTIFY_REFUSED")
+            _release_claim(claim, "NOTIFY_REFUSED")
             return JSONResponse(
                 status_code=409,
                 content=_body(request, {"error": "NOTIFY_REFUSED", "reason": str(refused)}),
             )
         except Exception:
             conn.rollback()
-            _release_claim(claim.ledger_id, "NOTIFY_FAILED")
+            _release_claim(claim, "NOTIFY_FAILED")
             raise
         finally:
             slack.close()

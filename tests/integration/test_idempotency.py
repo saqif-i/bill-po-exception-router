@@ -76,7 +76,13 @@ def test_a_succeeded_key_replays_the_recorded_body():
     key = _key()
     with psycopg.connect(OWNER_URL) as conn:
         first = _claim(conn, key)
-        idempotency_store.complete(conn, first.ledger_id, status_code=200, summary={"ingested": 3})
+        idempotency_store.complete(
+            conn,
+            first.ledger_id,
+            generation=first.generation,
+            status_code=200,
+            summary={"ingested": 3},
+        )
         conn.commit()
         replay = _claim(conn, key)
     assert replay.replayed is True
@@ -89,7 +95,11 @@ def test_a_retryable_failure_is_reclaimed():
     with psycopg.connect(OWNER_URL) as conn:
         first = _claim(conn, key)
         idempotency_store.fail(
-            conn, first.ledger_id, error_class="RETRYABLE", error_code="POLL_FAILED"
+            conn,
+            first.ledger_id,
+            generation=first.generation,
+            error_class="RETRYABLE",
+            error_code="POLL_FAILED",
         )
         conn.commit()
         again = _claim(conn, key)
@@ -103,7 +113,11 @@ def test_a_permanent_failure_is_never_re_executed():
     with psycopg.connect(OWNER_URL) as conn:
         first = _claim(conn, key)
         idempotency_store.fail(
-            conn, first.ledger_id, error_class="PERMANENT", error_code="BAD_REQUEST"
+            conn,
+            first.ledger_id,
+            generation=first.generation,
+            error_class="PERMANENT",
+            error_code="BAD_REQUEST",
         )
         conn.commit()
         with pytest.raises(ServiceError) as exc:
@@ -153,3 +167,86 @@ def test_an_expired_lease_is_reclaimed():
     assert again.replayed is False
     assert again.ledger_id == first.ledger_id
     assert generation == 1
+
+
+def _expire(conn, ledger_id) -> None:
+    with conn.cursor() as cur:
+        cur.execute(
+            "UPDATE idempotency_registry SET lease_expires_at = now() - interval '1 second' "
+            "WHERE ledger_id = %s",
+            (ledger_id,),
+        )
+
+
+def _state(conn, ledger_id):
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT status, result_summary, claim_generation FROM idempotency_registry "
+            "WHERE ledger_id = %s",
+            (ledger_id,),
+        )
+        return cur.fetchone()
+
+
+def test_a_request_that_outlived_its_lease_cannot_overwrite_its_replacement():
+    """The slow first holder finishes after the key was taken over. Its late
+    complete() and fail() must change nothing."""
+    key = _key()
+    with psycopg.connect(OWNER_URL) as conn:
+        slow = _claim(conn, key)
+        _expire(conn, slow.ledger_id)
+        conn.commit()
+        replacement = _claim(conn, key)
+        conn.commit()
+
+        late_complete = idempotency_store.complete(
+            conn,
+            slow.ledger_id,
+            generation=slow.generation,
+            status_code=200,
+            summary={"by": "slow"},
+        )
+        conn.commit()
+        after_late_complete = _state(conn, slow.ledger_id)
+
+        current = idempotency_store.complete(
+            conn,
+            replacement.ledger_id,
+            generation=replacement.generation,
+            status_code=200,
+            summary={"by": "replacement"},
+        )
+        late_fail = idempotency_store.fail(
+            conn,
+            slow.ledger_id,
+            generation=slow.generation,
+            error_class="RETRYABLE",
+            error_code="LATE",
+        )
+        conn.commit()
+        final = _state(conn, slow.ledger_id)
+
+    assert (slow.generation, replacement.generation) == (0, 1)
+    assert late_complete is False
+    assert after_late_complete[0] == "PROCESSING"
+    assert current is True
+    assert late_fail is False
+    assert final[0] == "SUCCEEDED"
+    assert final[1] == {"by": "replacement"}
+
+
+def test_reclaiming_a_retryable_failure_starts_a_new_generation():
+    key = _key()
+    with psycopg.connect(OWNER_URL) as conn:
+        first = _claim(conn, key)
+        idempotency_store.fail(
+            conn,
+            first.ledger_id,
+            generation=first.generation,
+            error_class="RETRYABLE",
+            error_code="X",
+        )
+        conn.commit()
+        again = _claim(conn, key)
+        conn.commit()
+    assert again.generation == first.generation + 1

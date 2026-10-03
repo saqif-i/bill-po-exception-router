@@ -66,27 +66,57 @@ class PageWalk:
     last_updated: datetime | None
 
 
+# Each re-query starts this far before the newest timestamp seen, in case Xero
+# compares If-Modified-Since at whole seconds or as strictly-after. Bills read
+# twice because of it are recognised and handled once.
+REQUERY_OVERLAP = timedelta(seconds=1)
+
+
 def walk_pages(
-    fetch_page: Callable[[int], list[dict]],
+    fetch_page: Callable[[datetime | None, int], list[dict]],
     handle: Callable[[dict], None],
     *,
+    since: datetime | None,
     page_size: int,
     max_pages: int,
 ) -> PageWalk:
-    """Read pages until one comes back short, or until the page cap.
+    """Read every bill modified since `since`, oldest first, until a short page.
 
-    `truncated` says the cap stopped the walk with bills possibly left unread.
-    `last_updated` is the newest UpdatedDateUTC seen; bills arrive oldest first,
-    so everything up to it has been read.
+    Re-queries from the newest UpdatedDateUTC seen rather than stepping page
+    numbers. A bill edited mid-poll moves to the end of the ordering, and with
+    page numbers every later bill shifts back one, so the next page started one
+    bill too late and skipped it. Each bill version (id and UpdatedDateUTC) is
+    handled once, however many queries return it.
+
+    A full page that brings nothing new means more than a page of bills share
+    one timestamp; the walk then steps to the next page of that same query so it
+    always makes progress. `fetch_page` takes (since, page).
+
+    `truncated` says the request cap stopped the walk with bills possibly left
+    unread. `last_updated` is the newest UpdatedDateUTC handled; bills arrive
+    oldest first, so everything up to it has been read.
     """
+    seen: set[tuple] = set()
     last_updated = None
-    for page in range(1, max_pages + 1):
-        invoices = fetch_page(page)
+    page = 1
+    for _ in range(max_pages):
+        invoices = fetch_page(since, page)
+        fresh = 0
         for raw in invoices:
+            version = (raw.get("InvoiceID"), raw.get("UpdatedDateUTC"))
+            if version in seen:
+                continue
+            seen.add(version)
+            fresh += 1
             handle(raw)
             last_updated = xero_timestamp(raw.get("UpdatedDateUTC")) or last_updated
         if len(invoices) < page_size:
             return PageWalk(truncated=False, last_updated=last_updated)
+        newest = xero_timestamp(invoices[-1].get("UpdatedDateUTC"))
+        if fresh and newest is not None:
+            since, page = newest - REQUERY_OVERLAP, 1
+        else:
+            page += 1
     return PageWalk(truncated=True, last_updated=last_updated)
 
 
