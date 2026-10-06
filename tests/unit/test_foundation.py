@@ -191,3 +191,25 @@ def test_no_export_carries_pinned_data() -> None:
     instead of calling the service on a manual run."""
     for path in sorted((REPO / "n8n" / "workflows").glob("*.json")):
         assert not json.loads(path.read_text()).get("pinData"), path.name
+
+
+def test_a_node_failure_in_bill_processing_still_names_its_run() -> None:
+    """A timeout or refused connection made the HTTP node itself fail, with an
+    n8n message that names no bill, so two bills' alerts looked identical."""
+    workflow = json.loads((REPO / "n8n" / "workflows" / "02-bill-processing.json").read_text())
+    nodes = {n["name"]: n for n in workflow["nodes"]}
+    for name, node in nodes.items():
+        if node["type"] != "n8n-nodes-base.httpRequest":
+            continue
+        assert node.get("onError") == "continueErrorOutput", name
+        (error_target,) = [c["node"] for c in workflow["connections"][name]["main"][1]]
+        assert nodes[error_target]["type"] == "n8n-nodes-base.stopAndError", name
+        assert "run_id" in nodes[error_target]["parameters"]["errorMessage"], name
+
+
+def test_the_error_workflow_sends_the_run_it_failed_on() -> None:
+    workflow = json.loads((REPO / "n8n" / "workflows" / "03-error-handler.json").read_text())
+    nodes = {n["name"]: n for n in workflow["nodes"]}
+    shaped = {a["name"] for a in nodes["Shape Failure"]["parameters"]["assignments"]["assignments"]}
+    assert "run_id" in shaped
+    assert "run_id:" in nodes["Alert"]["parameters"]["jsonBody"]

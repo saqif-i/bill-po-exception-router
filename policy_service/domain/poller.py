@@ -158,6 +158,9 @@ def runs_awaiting_a_card(
     stale-attempt cleanup. Re-sent, 02 replays reconcile and semantic review
     and posts the card.
 
+    A card counts only if it was posted for the run's current destination:
+    after a hand-off, the previous team's card does not.
+
     Only runs whose model stage has finished: a stage still PENDING or
     IN_PROGRESS is not ready for a card, and IN_PROGRESS is the stale-attempt
     cleanup's job.
@@ -171,7 +174,8 @@ def runs_awaiting_a_card(
                      'COMPLETED_WITH_RECOMMENDATION', 'COMPLETED_WITHOUT_RECOMMENDATION')
                AND r.updated_at < now() - %s
                AND NOT EXISTS (SELECT 1 FROM slack_notifications n
-                                WHERE n.run_id = r.run_id AND n.post_status = 'POSTED')
+                                WHERE n.run_id = r.run_id AND n.post_status = 'POSTED'
+                                  AND n.destination = r.triage_destination)
              ORDER BY r.updated_at
              LIMIT %s
             """,

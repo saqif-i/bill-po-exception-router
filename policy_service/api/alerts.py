@@ -31,13 +31,14 @@ router = APIRouter(prefix="/alerts", tags=["alerts"])
 
 # An identical alert already posted within this window is recorded but not
 # posted again, so a failure that repeats every poll does not post every poll.
-# Failure messages name the run, so separate bills still alert separately.
+# The run is part of the key, so separate bills still alert separately.
 REPEAT_WINDOW = timedelta(minutes=30)
 
 # Longest value kept for each field. Longer values are shortened, not refused:
 # an alert rejected for a long error message is an alert nobody receives.
 FIELD_LIMITS = {
     "workflow": 200,
+    "run_id": 64,
     "execution_id": 100,
     "failed_node": 200,
     "message": 2000,
@@ -49,6 +50,7 @@ class AlertBody(BaseModel):
     """What workflow 03 knows about the failure. Every field is bounded."""
 
     workflow: str
+    run_id: str | None = None
     execution_id: str | None = None
     failed_node: str | None = None
     message: str | None = None
@@ -64,7 +66,9 @@ class AlertBody(BaseModel):
 
 
 def _fingerprint(body: AlertBody) -> str:
-    text = "|".join([body.workflow, body.failed_node or "", body.message or ""])
+    # The run is part of the key: two bills failing the same way are two
+    # alerts, not one alert and one silence.
+    text = "|".join([body.workflow, body.run_id or "", body.failed_node or "", body.message or ""])
     return hashlib.sha256(text.encode()).hexdigest()
 
 
@@ -135,6 +139,7 @@ def alert(
                 channel=ALERTS_CHANNEL,
                 blocks=build_alert(
                     workflow=body.workflow,
+                    run_id=body.run_id,
                     failed_node=body.failed_node,
                     message=message,
                     execution_id=body.execution_id,

@@ -239,7 +239,7 @@ def test_a_retried_interaction_does_not_produce_a_second_decision():
             user_id="U1",
             user_name=None,
             interaction_id=interaction,
-            message_ts=None,
+            message_ts="1700000000.000100",  # the card notify posted
         )
         conn.commit()
         second = triage.record_decision(
@@ -249,7 +249,7 @@ def test_a_retried_interaction_does_not_produce_a_second_decision():
             user_id="U1",
             user_name=None,
             interaction_id=interaction,
-            message_ts=None,
+            message_ts="1700000000.000100",  # the card notify posted
         )
         conn.commit()
         with conn.cursor() as cur:
@@ -272,7 +272,7 @@ def test_a_decision_is_immutable():
             user_id="U1",
             user_name=None,
             interaction_id=f"i-{uuid.uuid4()}",
-            message_ts=None,
+            message_ts="1700000000.000100",  # the card notify posted
         )
         conn.commit()
 
@@ -734,3 +734,70 @@ def test_after_a_hand_off_the_decision_updates_the_new_card_in_its_own_channel()
     assert record == ("C-FIN", "FINANCE", FINANCE_TS, None)
     assert updated is True
     assert (slack.updates[0]["channel"], slack.updates[0]["message_ts"]) == ("C-FIN", FINANCE_TS)
+
+
+def _handed_to_finance(conn):
+    """Posted to AP review, then sent to finance; finance's card not yet posted."""
+    run_id = _seed_ap_review(conn)
+    triage.notify(
+        conn,
+        run_id=run_id,
+        correlation_id=uuid.uuid4(),
+        client=FakeSlack(post_result=PostOutcome(True, message_ts=AP_TS, channel_id="C-AP")),
+    )
+    conn.commit()
+    _decide(conn, run_id, TriageAction.SEND_TO_FINANCE, AP_TS)
+    return run_id
+
+
+def _final_decisions(conn, run_id):
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT count(*) FROM triage_decisions WHERE run_id = %s AND is_final", (run_id,)
+        )
+        return cur.fetchone()[0]
+
+
+def test_the_old_card_cannot_close_a_case_before_finance_has_its_card():
+    """In the gap before finance's card was recorded, the AP card was still the
+    card on record, so its "Mark reviewed" closed the case unseen by finance."""
+    with psycopg.connect(OWNER_URL) as conn:
+        run_id = _handed_to_finance(conn)
+        with pytest.raises(triage.DecisionRefusedError, match="CARD_SUPERSEDED"):
+            _decide(conn, run_id, TriageAction.MARK_REVIEWED, AP_TS)
+        conn.rollback()
+        state = _run(conn, run_id)
+        finals = _final_decisions(conn, run_id)
+
+    assert state == ("REVIEW_READY", "FINANCE")
+    assert finals == 0
+
+
+def test_the_old_card_cannot_close_a_case_whose_finance_card_failed_to_post():
+    with psycopg.connect(OWNER_URL) as conn:
+        run_id = _handed_to_finance(conn)
+        triage.notify(
+            conn,
+            run_id=run_id,
+            correlation_id=uuid.uuid4(),
+            client=FakeSlack(post_result=PostOutcome(False, error="not_in_channel")),
+        )
+        conn.commit()
+        with pytest.raises(triage.DecisionRefusedError, match="CARD_SUPERSEDED"):
+            _decide(conn, run_id, TriageAction.MARK_REVIEWED, AP_TS)
+        conn.rollback()
+        finals = _final_decisions(conn, run_id)
+
+    assert finals == 0
+
+
+def test_a_handed_off_case_whose_new_card_was_never_attempted_is_resent():
+    """The old AP card counted as a posted card, so the re-send skipped it."""
+    from policy_service.domain.poller import runs_awaiting_a_card
+
+    with psycopg.connect(OWNER_URL) as conn:
+        run_id = _handed_to_finance(conn)  # and then the service stopped
+        _backdate(conn, run_id, 16)
+        found = runs_awaiting_a_card(conn, limit=100_000)
+
+    assert run_id in found

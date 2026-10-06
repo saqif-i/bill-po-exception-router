@@ -231,6 +231,7 @@ def build_decided_card(
 def build_alert(
     *,
     workflow: str,
+    run_id: str | None = None,
     failed_node: str | None,
     message: str | None,
     execution_id: str | None,
@@ -239,6 +240,8 @@ def build_alert(
     """A failure alert. Every value is escaped: an error message can quote
     supplier or provider text, and none of it may ping a channel."""
     lines = [f"*Workflow failed*  `{escape_mrkdwn(workflow)}`"]
+    if run_id:
+        lines.append(f"Run: `{escape_mrkdwn(run_id)}`")
     if failed_node:
         lines.append(f"Node: `{escape_mrkdwn(failed_node)}`")
     if message:

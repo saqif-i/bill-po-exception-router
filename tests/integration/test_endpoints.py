@@ -525,3 +525,24 @@ def test_a_click_on_a_card_already_decided_refreshes_it_instead_of_failing(clien
     (update,) = fake.updates
     assert (update["channel"], update["message_ts"]) == ("C-AP", AP_TS)
     assert "Request more information" in str(update["blocks"])  # the recorded decision
+
+
+def test_two_bills_failing_the_same_way_are_two_alerts(client, monkeypatch):
+    """Without the run in the key, the second bill's alert was suppressed."""
+    from policy_service.integrations import slack_client
+    from policy_service.integrations.slack_client import PostOutcome
+
+    http, headers = client
+    slack = ScriptedSlack(PostOutcome(True), PostOutcome(True), PostOutcome(True))
+    monkeypatch.setattr(slack_client, "SlackClient", lambda **_kwargs: slack)
+    message = f"timeout of 60000ms exceeded {uuid.uuid4()}"
+    first_run, second_run = str(uuid.uuid4()), str(uuid.uuid4())
+
+    first = _alert(http, headers, f"alert-test-{uuid.uuid4()}", run_id=first_run, message=message)
+    second = _alert(http, headers, f"alert-test-{uuid.uuid4()}", run_id=second_run, message=message)
+    repeat = _alert(http, headers, f"alert-test-{uuid.uuid4()}", run_id=first_run, message=message)
+
+    assert first.json()["posted"] is True
+    assert second.json()["posted"] is True
+    assert repeat.json()["posted"] is False  # the same bill again is still a repeat
+    assert f"Run: `{second_run}`" in str(slack.sent[1]["blocks"])

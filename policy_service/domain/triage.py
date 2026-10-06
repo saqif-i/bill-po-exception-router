@@ -330,9 +330,25 @@ def record_decision(
     if action not in ACTIONS_FOR[context.destination]:
         raise DecisionRefusedError(f"ACTION_NOT_OFFERED_FOR_{context.destination.value}")
     with conn.cursor() as cur:
-        cur.execute("SELECT message_ts FROM slack_notifications WHERE run_id = %s", (run_id,))
+        cur.execute(
+            "SELECT message_ts, post_status, destination FROM slack_notifications "
+            "WHERE run_id = %s",
+            (run_id,),
+        )
         card = cur.fetchone()
-    if card is not None and card[0] and message_ts and card[0] != message_ts:
+    # The clicked card must be the current one: posted, for the run's current
+    # team, and the card that was clicked. Comparing timestamps alone accepted
+    # the old AP card after a hand-off, both before the new team's card was
+    # recorded and after it failed to post, so a case "sent to finance" could
+    # be closed without finance seeing it. No record at all means the run's
+    # first card is being posted, and a click can only have come from it.
+    current = card is not None and (
+        card[1] == "POSTED"
+        and card[2] == context.destination.value
+        and bool(message_ts)
+        and card[0] == message_ts
+    )
+    if card is not None and not current:
         raise DecisionRefusedError("CARD_SUPERSEDED")
 
     handoff_to = HANDOFFS.get(action)
