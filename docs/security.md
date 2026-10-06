@@ -33,15 +33,25 @@ test: supplier name, any identifier, invoice or purchase-order number, tenant
 id, correlation id, any monetary amount, quantity, account code, tax type, date,
 exception code or deterministic result.
 
-**Slack.** The triage card. It carries the invoice number, exception codes, the
-routing destination and, where one exists, a wording recommendation with its
-evidence spans. Evidence spans are verbatim substrings of the two descriptions,
+**Slack.** The triage card. It carries the invoice number, the purchase-order
+number, exception codes, the routing destination and, where one exists, a
+wording recommendation with its evidence spans. Evidence spans are verbatim substrings of the two descriptions,
 so nothing is shown that the supplier did not write. That text, the model's
 explanation and the invoice number have `&`, `<` and `>` escaped before they
 reach Slack, so supplier wording such as `<!channel>` cannot notify a channel
 or disguise a link. Failure alerts in `#ap-alerts` carry the workflow, run,
 node and error message; the message is passed through redaction and escaped before it is
 posted.
+
+**Notes typed in Slack.** An escalation reason, a send-back note, a question or
+an answer is typed by a person into a Slack modal (ADR-010). It is stored in
+`triage_decisions.note`, immutable like the rest of the row. It is 1 to 500
+characters after trimming: checked by the handler, which sends the person back to
+the modal, again where the decision is recorded, and by a CHECK constraint. It
+is escaped like supplier text on every card that shows it, and those sections
+are marked `verbatim` so Slack does not turn a bare `@channel` or URL into a
+mention or link. It is never logged and never sent to a model: no module that
+handles a note imports the model client, which a test asserts (I43).
 
 ## Redaction
 

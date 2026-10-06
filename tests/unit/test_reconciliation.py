@@ -636,3 +636,15 @@ def test_a_purchase_order_off_the_allow_list_is_an_exception_and_closes_the_gate
     result = run(bill_of([line("w")]), po_of([line("w")]), po_allow_listed=False)
     assert result.exception_codes == [ExceptionCode.PO_NOT_ALLOW_LISTED]
     assert result.semantic_permitted is False
+
+
+def test_no_exception_code_routes_to_escalations():
+    """I41. Escalations is where a person sends a case, never where routing
+    does: every single code, every pair, all of them together and none."""
+    from itertools import combinations
+
+    from policy_service.domain.routing import route
+
+    codes = list(ExceptionCode)
+    sets = [[], codes, *([code] for code in codes), *combinations(codes, 2)]
+    assert all(route(subset) is not TriageDestination.ESCALATED for subset in sets)

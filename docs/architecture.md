@@ -30,8 +30,12 @@ n8n schedule, every few minutes
                                             └─ POST /slack/interactions
                                                   └─ decision  [one transaction]
                                                        ├─ final     -> COMPLETED
-                                                       └─ hand-off  -> REVIEW_READY,
-                                                          new destination, new card
+                                                       ├─ hand-off  -> REVIEW_READY,
+                                                       │  new destination, new card
+                                                       │  (send to a team, escalate,
+                                                       │   send back)
+                                                       └─ request or answer
+                                                          -> same card, redrawn
 ```
 
 ## Components
@@ -81,6 +85,15 @@ not succeed returns the run to `REVIEW_READY` for a retry.
 returns to `REVIEW_READY` with the new destination, notify posts that team's
 card, and that team's decision closes the run. One final decision per run; any
 number of hand-offs before it.
+
+Escalate and Send back are hand-offs too (ADR-010). Escalate asks for a reason
+in a Slack modal and moves the case to the escalations destination, which
+routing never produces; Send back returns it to the team that escalated it.
+One escalation per run. Request more information and Information received
+also ask for a note, but keep the run where it is: the card is redrawn, and
+while a question is open it offers only the answer, and Escalate where that is
+offered. The controls a card offers and the clicks the server accepts come from
+the same function, `allowed_actions()` in `policy_service/domain/triage.py`.
 
 ## What is not here
 

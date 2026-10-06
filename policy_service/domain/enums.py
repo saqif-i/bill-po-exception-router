@@ -112,12 +112,17 @@ class HumanReviewReason(StrEnum):
 
 
 class TriageDestination(StrEnum):
-    """Decided deterministically. A model recommendation is never an input."""
+    """Decided deterministically. A model recommendation is never an input.
+
+    ESCALATED is the exception: routing never produces it (I41). Only a
+    person's Escalate click moves a case there (ADR-010).
+    """
 
     FINANCE = "FINANCE"
     PROCUREMENT = "PROCUREMENT"
     AP_REVIEW = "AP_REVIEW"
     DUPLICATE_REVIEW = "DUPLICATE_REVIEW"
+    ESCALATED = "ESCALATED"
 
 
 class TriageAction(StrEnum):
@@ -130,6 +135,8 @@ class TriageAction(StrEnum):
     REQUEST_MORE_INFORMATION = "REQUEST_MORE_INFORMATION"
     ESCALATE = "ESCALATE"
     CLOSE_AS_DUPLICATE = "CLOSE_AS_DUPLICATE"
+    SEND_BACK = "SEND_BACK"
+    INFORMATION_RECEIVED = "INFORMATION_RECEIVED"
 
 
 class SemanticGateReason(StrEnum):

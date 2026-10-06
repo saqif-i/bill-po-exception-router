@@ -8,7 +8,8 @@ v1 builds, what it defers, and why. Section 2 names every deferred component, an
 should be built.
 
 Nothing in this document weakens an operational invariant. See
-`docs/invariant-register-v1.md` for the status of all forty.
+`docs/invariant-register-v1.md` for the status of all forty-three (forty, plus
+three added with ADR-010 in v1.1).
 
 ---
 
@@ -49,12 +50,12 @@ recorded as not applicable with a reason, not quietly dropped.
 |---|---|
 | Repository foundation and CI | Full. Pinned dependencies, secret scanning, CI, two-database boundary. |
 | FastAPI service foundation | Reduced. Auth, correlation IDs, safe errors, health and readiness, request limits, the `Idempotency-Key` contract. No outbox, retention, status or webhook endpoints. |
-| PostgreSQL data model | Reduced. Five migrations: `001_core_schema.sql` (runs, bills, purchase orders, fixtures, ingestion, idempotency registry), `003_reconciliation.sql`, `004_semantic.sql`, `005_triage_and_slack.sql` reduced to the triage and decision tables, and `005b_triage_handoff.sql` (hand-offs, ADR-009). No lease or fencing machinery. |
+| PostgreSQL data model | Reduced. Six migrations: `001_core_schema.sql` (runs, bills, purchase orders, fixtures, ingestion, idempotency registry), `003_reconciliation.sql`, `004_semantic.sql`, `005_triage_and_slack.sql` reduced to the triage and decision tables, `005b_triage_handoff.sql` (hand-offs, ADR-009) and, in v1.1, `005c_escalation_and_information.sql` (escalation and information requests, ADR-010). No lease or fencing machinery. |
 | Xero connection and read client | Read path only. Custom Connection, token caching, timeouts, bounded retries, `Retry-After` handling, decimal-safe parsing. The transport allow-list contains no write method. |
 | Deterministic reconciliation | Full. This is the core and is not reduced. |
 | n8n polling and orchestration | Three workflows: polling, processing, error handling. |
 | Claude semantic recommendation | Full, including the invocation gate, both schemas, prompt-injection resistance and the evaluation harness. This is the differentiator and is not reduced. |
-| Slack human triage | Reduced. Verified ingress, decision capture, audit trail, and a best-effort in-place card update showing the decision, who made it, when and the destination. No durable result-update lifecycle. |
+| Slack human triage | Reduced. Verified ingress, decision capture, audit trail, and a best-effort in-place card update showing the decision, who made it, when and the destination. In v1.1, Slack modals for an escalation reason, a send-back note, a question and its answer (ADR-010). No durable result-update lifecycle. |
 | Evaluation and demonstration | The evaluation harness, measured results in the README, and a recorded demonstration. |
 
 **Not built:**
@@ -116,12 +117,13 @@ building the durable outbox or recovery and replay later is additive.
 Four consequences that are easy to get wrong:
 
 1. **Migration numbering has one gap.** v1 creates `001`, `003`, `004`, `005`
-   and `005b`. `005` is reduced to the triage and decision tables without the
-   Slack result-update lifecycle that belongs to the durable outbox. `002` is
-   reserved for the fixture reset machinery, and `006` through `008` for the
-   durable outbox, recovery and replay, and webhooks. `005b` (ADR-009) is lettered
-   rather than numbered because the runner refuses a migration that sorts before
-   one already applied: numbering it `009` would block `006` to `008` for good.
+   and `005b`, and v1.1 adds `005c`. `005` is reduced to the triage and decision
+   tables without the Slack result-update lifecycle that belongs to the durable
+   outbox. `002` is reserved for the fixture reset machinery, and `006` through
+   `008` for the durable outbox, recovery and replay, and webhooks. `005b`
+   (ADR-009) and `005c` (ADR-010) are lettered rather than numbered because the
+   runner refuses a migration that sorts before one already applied: numbering
+   either `009` would block `006` to `008` for good.
    `db/migrate.py` applies files in lexical order of what exists on disk and
    must not assert a contiguous sequence. Do not renumber and do not reuse `002`.
 2. **`xero_transport.py` stays separate from `xero_client.py`** even though v1 has

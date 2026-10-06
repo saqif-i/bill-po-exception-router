@@ -16,7 +16,7 @@ psycopg = pytest.importorskip("psycopg")
 
 from policy_service.db.repository import persist_reconciliation  # noqa: E402
 from policy_service.domain import triage  # noqa: E402
-from policy_service.domain.enums import TriageAction  # noqa: E402
+from policy_service.domain.enums import TriageAction, TriageDestination  # noqa: E402
 from policy_service.domain.models import Bill, PurchaseOrder  # noqa: E402
 from policy_service.domain.reconciliation import reconcile  # noqa: E402
 from policy_service.integrations.slack_client import PostOutcome  # noqa: E402
@@ -117,6 +117,7 @@ def _seed(conn, bill_over=None):
         tolerance_version="v1",
         account_reference_version="chart-v1",
         account_reference_hash="d" * 64,
+        po_number=po_number,
     )
     return run_id
 
@@ -197,7 +198,7 @@ def test_a_decision_records_what_the_person_was_shown():
         result = triage.record_decision(
             conn,
             run_id=run_id,
-            action=TriageAction.ESCALATE,
+            action=TriageAction.MARK_REVIEWED,
             user_id="U123",
             user_name="saqif",
             interaction_id=f"i-{uuid.uuid4()}",
@@ -216,7 +217,7 @@ def test_a_decision_records_what_the_person_was_shown():
             status = cur.fetchone()[0]
 
     assert result["recorded"] is True
-    assert action == "ESCALATE"  # a control the procurement card offers
+    assert action == "MARK_REVIEWED"  # a control the procurement card offers
     assert by == "U123"
     assert "QUANTITY_VARIANCE" in codes
     assert destination == "PROCUREMENT"
@@ -268,7 +269,7 @@ def test_a_decision_is_immutable():
         triage.record_decision(
             conn,
             run_id=run_id,
-            action=TriageAction.ESCALATE,
+            action=TriageAction.MARK_REVIEWED,
             user_id="U1",
             user_name=None,
             interaction_id=f"i-{uuid.uuid4()}",
@@ -281,7 +282,7 @@ def test_a_decision_is_immutable():
         pytest.raises(psycopg.errors.DatabaseError),
         conn.cursor() as cur,
     ):
-        cur.execute("UPDATE triage_decisions SET action='MARK_REVIEWED' WHERE run_id=%s", (run_id,))
+        cur.execute("UPDATE triage_decisions SET action='ESCALATE' WHERE run_id=%s", (run_id,))
 
 
 def test_the_card_update_is_best_effort_and_the_decision_survives_its_failure():
@@ -550,7 +551,7 @@ def _seed_ap_review(conn):
     return run_id
 
 
-def _decide(conn, run_id, action, message_ts, user="U123"):
+def _decide(conn, run_id, action, message_ts, user="U123", note=None):
     result = triage.record_decision(
         conn,
         run_id=run_id,
@@ -559,6 +560,7 @@ def _decide(conn, run_id, action, message_ts, user="U123"):
         user_name=None,
         interaction_id=f"i-{uuid.uuid4()}",
         message_ts=message_ts,
+        note=note,
     )
     conn.commit()
     return result
@@ -604,7 +606,7 @@ def test_send_to_finance_hands_the_case_to_finance_whose_decision_closes_it():
     assert after_handoff == ("REVIEW_READY", "FINANCE")
     assert posted["posted"] is True and posted["channel"] == "ap-finance"
     card = str(finance.posts[0]["blocks"])
-    assert "Sent here from ap review by <@U123>" in card
+    assert "Sent here from AP review by <@U123>" in card
     assert "SEND_TO_PROCUREMENT" not in card  # finance's own controls
     assert after_card == ("AWAITING_TRIAGE", "FINANCE")
     assert final["recorded"] is True and final["handoff_to"] is None
@@ -680,7 +682,7 @@ def test_the_schema_allows_one_final_decision_and_never_a_final_hand_off():
         insert("MARK_REVIEWED", True)
         conn.commit()
         with pytest.raises(errors.UniqueViolation):
-            insert("ESCALATE", True)
+            insert("CLOSE_AS_DUPLICATE", True)
         conn.rollback()
         with pytest.raises(errors.CheckViolation):
             insert("SEND_TO_PROCUREMENT", True)
@@ -801,3 +803,284 @@ def test_a_handed_off_case_whose_new_card_was_never_attempted_is_resent():
         found = runs_awaiting_a_card(conn, limit=100_000)
 
     assert run_id in found
+
+
+# --- escalation and information requests (ADR-010) ---------------------------
+TEAM_TS = "1700000002.000300"
+ESCALATION_TS = "1700000003.000400"
+RETURNED_TS = "1700000004.000500"
+A = TriageAction
+
+
+def _seed_at(conn, destination):
+    """A case with its card posted to `destination`. Seeded as procurement's
+    and moved, because routing is not what these tests are about."""
+    run_id = _seed(conn)
+    with conn.cursor() as cur:
+        cur.execute(
+            "UPDATE runs SET triage_destination = %s WHERE run_id = %s", (destination, run_id)
+        )
+    conn.commit()
+    _post(conn, run_id, TEAM_TS, "C-TEAM")
+    return run_id
+
+
+def _post(conn, run_id, message_ts, channel_id, ok=True):
+    """Post the card the case is owed now, as notify does."""
+    client = FakeSlack(
+        post_result=PostOutcome(True, message_ts=message_ts, channel_id=channel_id)
+        if ok
+        else PostOutcome(False, error="not_in_channel")
+    )
+    triage.notify(conn, run_id=run_id, correlation_id=uuid.uuid4(), client=client)
+    conn.commit()
+    return client
+
+
+def _escalated(conn, destination="FINANCE"):
+    run_id = _seed_at(conn, destination)
+    _decide(conn, run_id, A.ESCALATE, TEAM_TS, user="U200", note="Supplier disputes the price")
+    return run_id, _post(conn, run_id, ESCALATION_TS, "C-ESC")
+
+
+def _buttons(blocks):
+    return [e["action_id"] for b in blocks if b["type"] == "actions" for e in b["elements"]]
+
+
+def _record(conn, run_id):
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT action, note, is_final FROM triage_decisions WHERE run_id = %s "
+            "ORDER BY decided_at",
+            (run_id,),
+        )
+        return cur.fetchall()
+
+
+def _redraw_after(conn, run_id, result, action, user="U1"):
+    """The in-place card update a request or an answer makes."""
+    client = FakeSlack()
+    triage.update_card_best_effort(
+        conn,
+        run_id=run_id,
+        context=result["context"],
+        action=action,
+        user_id=user,
+        decided_at="now",
+        client=client,
+        note=result["note"],
+    )
+    conn.commit()
+    (update,) = client.updates
+    return update
+
+
+def test_an_escalation_moves_the_case_and_its_card_shows_who_when_why_and_the_path():
+    with psycopg.connect(OWNER_URL) as conn:
+        run_id, escalations = _escalated(conn)
+        state = _run(conn, run_id)
+        with conn.cursor() as cur:
+            cur.execute("SELECT po_number FROM reconciliation_results WHERE run_id = %s", (run_id,))
+            po_number = cur.fetchone()[0]
+
+    (card,) = escalations.posts
+    rendered = str(card["blocks"])
+    assert card["channel"] == "ap-escalations"
+    assert state == ("AWAITING_TRIAGE", "ESCALATED")
+    assert "*Escalated from finance* by <@U200>" in rendered
+    assert "Supplier disputes the price" in rendered
+    assert "finance → escalated by finance" in rendered
+    assert po_number and po_number in rendered
+    assert "QUANTITY_VARIANCE" in rendered
+    assert _buttons(card["blocks"]) == ["MARK_REVIEWED", "SEND_BACK", "REQUEST_MORE_INFORMATION"]
+
+
+def test_mark_reviewed_on_the_escalation_card_closes_the_case_with_one_final_decision():
+    with psycopg.connect(OWNER_URL) as conn:
+        run_id, _ = _escalated(conn)
+        # The finance card is no longer where the case is, whatever is clicked.
+        for action, note in ((A.MARK_REVIEWED, None), (A.ESCALATE, "Again")):
+            with pytest.raises(triage.DecisionRefusedError, match="CARD_SUPERSEDED"):
+                _decide(conn, run_id, action, TEAM_TS, note=note)
+            conn.rollback()
+        final = _decide(conn, run_id, A.MARK_REVIEWED, ESCALATION_TS, user="U300")
+        state = _run(conn, run_id)
+        finals = _final_decisions(conn, run_id)
+        record = _record(conn, run_id)
+
+    assert final["recorded"] is True and final["handoff_to"] is None
+    assert state == ("COMPLETED", "ESCALATED")
+    assert finals == 1
+    assert record == [
+        ("ESCALATE", "Supplier disputes the price", False),
+        ("MARK_REVIEWED", None, True),
+    ]
+
+
+def test_send_back_returns_the_case_to_the_team_that_escalated_it():
+    note = "The PO price stands; ask the supplier for a credit note"
+    with psycopg.connect(OWNER_URL) as conn:
+        run_id, _ = _escalated(conn, "PROCUREMENT")
+        back = _decide(conn, run_id, A.SEND_BACK, ESCALATION_TS, user="U300", note=note)
+        after_back = _run(conn, run_id)
+        returned = _post(conn, run_id, RETURNED_TS, "C-PROC")
+        with pytest.raises(triage.DecisionRefusedError, match="ALREADY_ESCALATED"):
+            _decide(conn, run_id, A.ESCALATE, RETURNED_TS, note="And again")
+        conn.rollback()
+        final = _decide(conn, run_id, A.MARK_REVIEWED, RETURNED_TS, user="U301")
+        decided = FakeSlack()
+        triage.update_card_best_effort(
+            conn,
+            run_id=run_id,
+            context=final["context"],
+            action=A.MARK_REVIEWED,
+            user_id="U301",
+            decided_at="now",
+            client=decided,
+        )
+        conn.commit()
+        state = _run(conn, run_id)
+        finals = _final_decisions(conn, run_id)
+        record = _record(conn, run_id)
+
+    (card,) = returned.posts
+    rendered = str(card["blocks"])
+    assert back["handoff_to"] is TriageDestination.PROCUREMENT
+    assert after_back == ("REVIEW_READY", "PROCUREMENT")
+    assert card["channel"] == "ap-procurement"
+    assert "*Sent back* by <@U300>" in rendered and note in rendered
+    assert "procurement → escalated by procurement → sent back to procurement" in rendered
+    assert _buttons(card["blocks"]) == ["MARK_REVIEWED", "REQUEST_MORE_INFORMATION"]
+    assert state == ("COMPLETED", "PROCUREMENT")
+    assert finals == 1
+    # Part 1.8: the record and the final card hold every reason and note.
+    assert record == [
+        ("ESCALATE", "Supplier disputes the price", False),
+        ("SEND_BACK", note, False),
+        ("MARK_REVIEWED", None, True),
+    ]
+    (final_card,) = decided.updates
+    assert "Supplier disputes the price" in str(final_card["blocks"])
+    assert note in str(final_card["blocks"])
+
+
+def test_a_request_for_information_waits_on_the_card_until_it_is_answered():
+    with psycopg.connect(OWNER_URL) as conn:
+        run_id = _seed_at(conn, "FINANCE")
+        asked = _decide(
+            conn, run_id, A.REQUEST_MORE_INFORMATION, TEAM_TS, note="Which cost centre?"
+        )
+        after_ask = _run(conn, run_id)
+        waiting = _redraw_after(conn, run_id, asked, A.REQUEST_MORE_INFORMATION)
+        refused = []
+        for action, note in ((A.MARK_REVIEWED, None), (A.REQUEST_MORE_INFORMATION, "And?")):
+            with pytest.raises(triage.DecisionRefusedError) as caught:
+                _decide(conn, run_id, action, TEAM_TS, note=note)
+            conn.rollback()
+            refused.append(str(caught.value))
+        answered = _decide(conn, run_id, A.INFORMATION_RECEIVED, TEAM_TS, note="Cost centre 4410")
+        restored = _redraw_after(conn, run_id, answered, A.INFORMATION_RECEIVED)
+        with pytest.raises(triage.DecisionRefusedError, match="NO_INFORMATION_REQUEST_OPEN"):
+            _decide(conn, run_id, A.INFORMATION_RECEIVED, TEAM_TS, note="Nothing was asked")
+        conn.rollback()
+        # A second round.
+        _decide(conn, run_id, A.REQUEST_MORE_INFORMATION, TEAM_TS, note="Which project?")
+        with pytest.raises(triage.DecisionRefusedError, match="INFORMATION_REQUEST_OPEN"):
+            _decide(conn, run_id, A.MARK_REVIEWED, TEAM_TS)
+        conn.rollback()
+        _decide(conn, run_id, A.INFORMATION_RECEIVED, TEAM_TS, note="Project Atlas")
+        final = _decide(conn, run_id, A.MARK_REVIEWED, TEAM_TS)
+        state = _run(conn, run_id)
+        record = _record(conn, run_id)
+
+    assert asked["in_place"] is True and asked["handoff_to"] is None
+    assert after_ask == ("AWAITING_TRIAGE", "FINANCE")  # no new destination, no new card
+    assert waiting["message_ts"] == TEAM_TS
+    assert "Waiting for information:* Which cost centre? (asked by <@U123>" in str(
+        waiting["blocks"]
+    )
+    assert _buttons(waiting["blocks"]) == ["INFORMATION_RECEIVED", "ESCALATE"]
+    assert refused == ["INFORMATION_REQUEST_OPEN", "INFORMATION_REQUEST_OPEN"]
+    assert _buttons(restored["blocks"]) == ["MARK_REVIEWED", "REQUEST_MORE_INFORMATION", "ESCALATE"]
+    assert "Waiting for information" not in str(restored["blocks"])
+    assert "Which cost centre?" in str(restored["blocks"])
+    assert "Cost centre 4410" in str(restored["blocks"])
+    assert final["recorded"] is True
+    assert state == ("COMPLETED", "FINANCE")
+    assert [(action, final) for action, _note, final in record] == [
+        ("REQUEST_MORE_INFORMATION", False),
+        ("INFORMATION_RECEIVED", False),
+        ("REQUEST_MORE_INFORMATION", False),
+        ("INFORMATION_RECEIVED", False),
+        ("MARK_REVIEWED", True),
+    ]
+
+
+def test_a_question_asked_before_an_escalation_is_still_open_after_it():
+    with psycopg.connect(OWNER_URL) as conn:
+        run_id = _seed_at(conn, "FINANCE")
+        _decide(conn, run_id, A.REQUEST_MORE_INFORMATION, TEAM_TS, note="Which cost centre?")
+        _decide(conn, run_id, A.ESCALATE, TEAM_TS, note="No answer from the requester")
+        escalations = _post(conn, run_id, ESCALATION_TS, "C-ESC")
+        with pytest.raises(triage.DecisionRefusedError, match="INFORMATION_REQUEST_OPEN"):
+            _decide(conn, run_id, A.SEND_BACK, ESCALATION_TS, note="Not yet")
+        conn.rollback()
+        answered = _decide(conn, run_id, A.INFORMATION_RECEIVED, ESCALATION_TS, note="4410")
+        restored = _redraw_after(conn, run_id, answered, A.INFORMATION_RECEIVED)
+
+    (card,) = escalations.posts
+    assert "Waiting for information:* Which cost centre?" in str(card["blocks"])
+    assert _buttons(card["blocks"]) == ["INFORMATION_RECEIVED"]
+    assert _buttons(restored["blocks"]) == [
+        "MARK_REVIEWED",
+        "SEND_BACK",
+        "REQUEST_MORE_INFORMATION",
+    ]
+
+
+def test_the_schema_allows_one_escalation_per_run():
+    """I42, held by the database even if the service were wrong."""
+    from psycopg import errors
+
+    with psycopg.connect(OWNER_URL) as conn:
+        run_id = _seed_ap_review(conn)
+
+        def escalate():
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO triage_decisions (decision_id, run_id, correlation_id, action, "
+                    "decided_by, shown_exception_codes, shown_destination, shown_gate_reason, "
+                    "slack_interaction_id, is_final, note) VALUES (%s, %s, %s, 'ESCALATE', "
+                    "'U1', '{}', 'FINANCE', 'X', %s, false, 'A reason')",
+                    (uuid.uuid4(), run_id, uuid.uuid4(), f"i-{uuid.uuid4()}"),
+                )
+
+        escalate()
+        conn.commit()
+        with pytest.raises(errors.UniqueViolation):
+            escalate()
+        conn.rollback()
+
+
+@pytest.mark.parametrize("step", ["escalate", "send back"])
+def test_a_case_whose_escalation_or_send_back_card_failed_to_post_is_resent(step):
+    from policy_service.domain.poller import runs_awaiting_a_card
+
+    with psycopg.connect(OWNER_URL) as conn:
+        if step == "escalate":
+            run_id = _seed_at(conn, "FINANCE")
+            _decide(conn, run_id, A.ESCALATE, TEAM_TS, note="Disputed")
+            expected = "ap-escalations"
+        else:
+            run_id, _ = _escalated(conn)
+            _decide(conn, run_id, A.SEND_BACK, ESCALATION_TS, note="Agreed")
+            expected = "ap-finance"
+        _post(conn, run_id, None, None, ok=False)
+        owed = triage.awaits_card(conn, run_id)
+        _backdate(conn, run_id, 16)
+        found = runs_awaiting_a_card(conn, limit=100_000)
+        resent = _post(conn, run_id, "1700000009.000900", "C-X")
+
+    assert owed is True
+    assert run_id in found
+    assert resent.posts[0]["channel"] == expected

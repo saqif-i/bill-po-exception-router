@@ -456,7 +456,7 @@ def test_a_send_to_finance_click_posts_the_case_to_the_finance_channel(client, m
     assert update["message_ts"] == AP_TS and "now with finance" in str(update["blocks"])
     (post,) = fake.sent
     assert post["channel"] == "ap-finance"
-    assert "Sent here from ap review" in str(post["blocks"])
+    assert "Sent here from AP review" in str(post["blocks"])
 
 
 def test_a_resend_after_a_failed_hand_off_card_posts_it_instead_of_replaying(client, monkeypatch):
@@ -515,16 +515,16 @@ def test_a_click_on_a_card_already_decided_refreshes_it_instead_of_failing(clien
         )
         conn.commit()
         # Decided, and its card update "lost": the card still has buttons.
-        _decide(conn, run_id, TriageAction.REQUEST_MORE_INFORMATION, AP_TS)
+        _decide(conn, run_id, TriageAction.MARK_REVIEWED, AP_TS)
     fake = HandoffSlack()
     monkeypatch.setattr(slack_client, "SlackClient", lambda **_kwargs: fake)
 
-    response = _signed_click(http, run_id, "MARK_REVIEWED", AP_TS, secret, channel="C-AP")
+    response = _signed_click(http, run_id, "SEND_TO_FINANCE", AP_TS, secret, channel="C-AP")
 
     assert response.status_code == 200
     (update,) = fake.updates
     assert (update["channel"], update["message_ts"]) == ("C-AP", AP_TS)
-    assert "Request more information" in str(update["blocks"])  # the recorded decision
+    assert "Marked reviewed" in str(update["blocks"])  # the recorded decision
 
 
 def test_two_bills_failing_the_same_way_are_two_alerts(client, monkeypatch):

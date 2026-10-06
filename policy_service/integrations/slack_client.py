@@ -17,6 +17,8 @@ import httpx
 
 POST_MESSAGE = "https://slack.com/api/chat.postMessage"
 UPDATE_MESSAGE = "https://slack.com/api/chat.update"
+OPEN_VIEW = "https://slack.com/api/views.open"
+OPEN_VIEW_TIMEOUT = 2.5
 
 
 @dataclass(frozen=True)
@@ -53,7 +55,7 @@ class SlackClient:
     def __exit__(self, *_exc: object) -> None:
         self.close()
 
-    def _call(self, url: str, payload: dict) -> PostOutcome:
+    def _call(self, url: str, payload: dict, *, timeout: float | None = None) -> PostOutcome:
         try:
             response = self._client.post(
                 url,
@@ -62,6 +64,7 @@ class SlackClient:
                     "Authorization": f"Bearer {self.bot_token}",
                     "Content-Type": "application/json; charset=utf-8",
                 },
+                **({"timeout": timeout} if timeout is not None else {}),
             )
         except httpx.TimeoutException:
             # The request may or may not have been delivered. Reporting this as
@@ -92,4 +95,12 @@ class SlackClient:
         return self._call(
             UPDATE_MESSAGE,
             {"channel": channel, "ts": message_ts, "blocks": blocks, "text": text},
+        )
+
+    def open_view(self, *, trigger_id: str, view: dict) -> PostOutcome:
+        """Open a modal. The trigger expires three seconds after the click and
+        can be used once, so the call gets a budget inside that window: a slow
+        answer is no better than an `expired_trigger_id`."""
+        return self._call(
+            OPEN_VIEW, {"trigger_id": trigger_id, "view": view}, timeout=OPEN_VIEW_TIMEOUT
         )

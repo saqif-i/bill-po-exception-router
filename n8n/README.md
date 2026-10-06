@@ -75,8 +75,8 @@ localhost is that container.
 3. On 01 and 02, open **Settings** and set the error workflow to
    `03-error-handler`. The committed files have `REPLACE_WITH_03_WORKFLOW_ID`
    for the same reason.
-4. In Slack, create `#ap-alerts` and invite the bot, as for the four triage
-   channels. n8n holds no Slack token (ADR-002), so 03 posts through the
+4. In Slack, create `#ap-alerts` and invite the bot, as for the five triage
+   channels (`docs/runbook.md`, Slack setup). n8n holds no Slack token (ADR-002), so 03 posts through the
    service, which uses its own.
 5. Save each, then activate `01-bill-polling`.
 

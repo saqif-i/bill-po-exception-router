@@ -97,7 +97,18 @@ guaranteed once.
 
 **No escalation timer.** An exception routed to a destination sits there until a
 human acts. Nothing chases it. This is open question 4 in
-`docs/business-requirements.md` and it would change the design.
+`docs/business-requirements.md` and it would change the design. A person can
+escalate a case (ADR-010); nothing escalates one automatically.
+
+**Request more information contacts nobody outside Slack.** It records the
+question on the card and waits for someone to record the answer. No email, no
+direct message and nothing to a supplier is sent: the person asking does the
+asking.
+
+**A card shows the most recent decisions when there are very many.** Slack
+allows 50 blocks in a message. A case with enough rounds of questions and
+answers to pass that shows its latest decisions and says how many earlier ones
+are in the decision record, which keeps all of them.
 
 ---
 
@@ -124,13 +135,14 @@ assumption, not a measurement, and nothing here validates it.
 
 ## 5. Invariants with no subject in v1
 
-The design defines forty operational invariants. v1 weakens none of them, but
+The design defines forty operational invariants, and v1.1 adds three for
+escalation and information requests (I41 to I43). v1 weakens none of them, but
 eleven govern machinery it does not contain. Full reasoning and the status of all
-forty are in `docs/invariant-register-v1.md`.
+forty-three are in `docs/invariant-register-v1.md`.
 
 | Status | Count |
 |---|---|
-| Enforced | 23 |
+| Enforced | 26 |
 | Enforced, reduced surface | 3 |
 | Deferred | 3 |
 | Not applicable | 11 |
@@ -188,9 +200,10 @@ and gives operators a dead-letter view.
 **3. Fixture reset machinery.** Reactivates I33 and I34. Removes the manual
 reseeding tax after every Demo Company reset.
 
-**4. Escalation and ageing.** Not part of the full design. Open question 4 in the
-requirements brief. Requires a policy from a real stakeholder before it can be
-built.
+**4. Ageing and automatic escalation.** Not part of the full design. A person can
+escalate a case (ADR-010), but nothing ages one or escalates it on a deadline.
+Open question 4 in the requirements brief. Requires a policy from a real
+stakeholder before it can be built.
 
 **5. Webhooks.** Only if S14b establishes that a Custom Connection can be
 configured for webhook delivery. Current reading suggests webhook configuration is

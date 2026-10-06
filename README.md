@@ -77,6 +77,12 @@ Xero bill -> deterministic reconciliation -> outcome
                     -> Slack card -> a person decides -> recorded
 ```
 
+A person's decision can keep the case open. Escalate asks for a reason in a
+Slack modal and moves the case to `#ap-escalations`, once per case, where it is
+either closed or sent back to the team that escalated it with a note. Request
+more information records a question on the card and waits for the answer
+(ADR-010).
+
 ![The polling workflow in n8n: schedule, poll, split, and one sub-workflow execution per bill](docs/images/workflow.png)
 
 n8n owns scheduling, branching and retries. It holds one bearer token and no
@@ -139,13 +145,13 @@ attributed to a model change, a prompt change, or neither.
 | [`docs/ai-vs-deterministic-decisions.md`](docs/ai-vs-deterministic-decisions.md) | Where the model is used, and where it is not |
 | [`docs/business-requirements.md`](docs/business-requirements.md) | The problem in the terms a business would use |
 | [`docs/architecture.md`](docs/architecture.md) | What exists, in the order a bill passes through it |
-| [`docs/invariant-register-v1.md`](docs/invariant-register-v1.md) | All 40 invariants and their status |
+| [`docs/invariant-register-v1.md`](docs/invariant-register-v1.md) | All 43 invariants and their status |
 | [`docs/security.md`](docs/security.md) | Credentials, what leaves the machine, redaction |
 | [`docs/responsible-ai.md`](docs/responsible-ai.md) | The commitments, and how they are enforced |
 | [`docs/runbook.md`](docs/runbook.md) | Failures, each deliberately triggered |
 | [`docs/limitations-and-roadmap.md`](docs/limitations-and-roadmap.md) | What this does not do, and why |
 | [`docs/platform-mapping.md`](docs/platform-mapping.md) | What would change on SnapLogic or Tray |
-| [`DECISIONS.md`](DECISIONS.md) | Nine decisions, with the alternatives rejected |
+| [`DECISIONS.md`](DECISIONS.md) | Ten decisions, with the alternatives rejected |
 
 ## What it deliberately does not do
 

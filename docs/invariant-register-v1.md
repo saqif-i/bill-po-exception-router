@@ -1,20 +1,22 @@
 # Invariant register, v1
 
-The forty operational invariants were fixed before the build and cover the full
-design, including components v1 defers (listed in `BUILD-SCOPE-v1.md` section 2).
-No implementation detail may weaken an invariant, and where one appears to
-conflict with an invariant, the invariant wins.
+The forty operational invariants I01 to I40 were fixed before the build and
+cover the full design, including components v1 defers (listed in
+`BUILD-SCOPE-v1.md` section 2). v1.1 adds three, I41 to I43, with escalation and
+information requests (ADR-010), for forty-three in all. No implementation detail
+may weaken an invariant, and where one appears to conflict with an invariant,
+the invariant wins.
 
 v1 does not weaken any invariant. It builds a smaller system, and some
 invariants govern machinery that smaller system does not contain. This register
-records the status of every one of the forty, with a reason. Nothing is dropped
-silently.
+records the status of every one of the forty-three, with a reason. Nothing is
+dropped silently.
 
 ## Summary
 
 | Status | Count | Meaning |
 |---|---|---|
-| Enforced | 23 | Governs something v1 builds, and is enforced there. |
+| Enforced | 26 | Governs something v1 builds, and is enforced there. |
 | Enforced, reduced surface | 3 | Still enforced. The thing it governs is smaller or absent in v1, which makes the guarantee easier to hold, not harder. |
 | Deferred | 3 | Governs machinery v1 does not build. Would be re-activated with the deferred component that introduces it. |
 | Not applicable | 11 | Has no subject in v1. Every one of these governs the transactional outbox, the Xero write attempt, or replay. |
@@ -74,6 +76,9 @@ require reintroducing the Xero write path itself.
 | **I38** | Not applicable | A manual Xero reconciliation result is one of `CONFIRMED_WRITTEN`, `CONFIRMED_NOT_WRITTEN` or `INCONCLUSIVE`, recorded immutably against one action and one Xero replay generation. **Only `CONFIRMED_NOT_WRITTEN` authorises another Xero write attempt.** `CONFIRMED_WRITTEN` closes the action without a further write and creates the appropriate Slack result intent. `INCONCLUSIVE` remains blocked from replay. | Manual Xero reconciliation resolves an unknown write outcome. No writes, no unknown outcomes. |
 | **I39** | Not applicable | Every mutation of an `/outbox/process` command record requires a live lease under the full command fence: exact `ledger_id`, fixed endpoint scope, `status = PROCESSING`, exact `owner_id`, exact `claim_generation` and `lease_expires_at > now()`. A zero-row update means ownership was lost and the worker stops without changing command state. | Governs the `/outbox/process` command fence. The endpoint is not built. |
 | **I40** | Not applicable | Provider time and database finalisation time have separate bounded budgets. The provider transport receives only the provider budget, and the action deadline is at least the provider budget plus the finalisation budget. | Splits provider and finalisation time budgets for the Xero write path. Not built. |
+| **I41** | Enforced | Routing never produces the escalations destination. A case reaches `#ap-escalations` only because a person clicked Escalate and gave a reason. | `ESCALATED` appears in no routing set in `policy_service/domain/routing.py`; asserted over every code, every pair of codes and all of them together by `tests/unit/test_reconciliation.py`. Added in v1.1 (ADR-010). |
+| **I42** | Enforced | A run is escalated at most once. Escalate is never offered on the escalations card or on a card created by Send back, and a second escalation is refused. | `allowed_actions()` and the refusal in `policy_service/domain/triage.py`, and the `uq_triage_one_escalation_per_run` unique index in `migrations/005c_escalation_and_information.sql`. Asserted through the API and against the index. Added in v1.1. |
+| **I43** | Enforced | A note a person types (an escalation reason, a send-back note, a question or an answer) is 1 to 500 characters after trimming, is escaped before it appears on any card, and is never sent to a model. | Checked in `policy_service/api/slack.py` before recording, again in `record_decision()`, and by the `triage_note_bounded` CHECK; escaped by `escape_mrkdwn` in `policy_service/integrations/slack_blocks.py` on every card. No module that handles a note imports the model client. Asserted by `tests/unit/test_slack_card.py` and `tests/integration/test_escalation.py`. Added in v1.1. |
 
 ## Re-homed invariants
 

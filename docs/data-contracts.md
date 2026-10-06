@@ -9,7 +9,7 @@ Where each shape is defined, and what is guaranteed about it.
 | Reconciliation result | `policy_service/domain/reconciliation.ReconciliationResult` | `migrations/003` constraints, and a test asserting the SQL `CHECK` matches the enum |
 | Model request | `claude_contract.build_request_payload` | A test asserting no identifier, amount, code or date appears in the serialised request |
 | Model response | `schemas/semantic_review.model_facing` and `.strict` | The model-facing schema shapes the reply; the strict schema is applied server-side afterwards |
-| Slack interaction | `schemas/slack_interaction` | Signature verification, then explicit parsing |
+| Slack interaction | `policy_service/api/slack.py`: `block_actions` (a click) and `view_submission` (a modal's note, ADR-010) | Signature verification, then explicit parsing; a note is trimmed and bounded to 500 characters, and the decision is checked against the case's state |
 | Internal endpoints | `policy_service/api/runs.py` | Bearer auth, `Idempotency-Key`, body-size limit |
 
 ## Numbers

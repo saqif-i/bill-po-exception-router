@@ -1,8 +1,10 @@
 # Runbook
 
-Seven failures, each one **deliberately triggered** before this was written. If a
-symptom here does not match what you see, the runbook is wrong and should be
-corrected rather than worked around.
+Eight failures. Sections 1 to 6 were each **deliberately triggered** before they
+were written. Section 7, added with escalation (ADR-010), has so far been
+triggered only by a test, not against a live workspace; its trigger is given so
+that it can be. If a symptom here does not match what you see, the runbook is
+wrong and should be corrected rather than worked around.
 
 How to use this: find the symptom, confirm it with the check, apply the action.
 Every check is read-only.
@@ -228,7 +230,71 @@ Making this impossible needs a transactional outbox, which is deferred.
 
 ---
 
-## Escalation
+## 7. A control that asks for a note opens nothing
+
+**Symptom.** Clicking Escalate, Send back, Request more information or
+Information received opens no modal, and Slack shows "This app responded with
+status code 502". The service logs `modal not opened` with a `slack_error`.
+
+**Trigger it.** Set `SLACK_BOT_TOKEN` to an invalid value, restart the service,
+and click Escalate on a finance, procurement or duplicate-review card: Slack
+answers `views.open` with `invalid_auth`. In the test suite,
+`test_a_modal_slack_will_not_open_is_reported` does the same with
+`expired_trigger_id`.
+
+**Check.**
+```bash
+docker compose logs policy_service | grep "modal not opened"
+```
+
+| `slack_error` | Meaning |
+|---|---|
+| `expired_trigger_id` | The click was answered after more than three seconds: a slow database, a cold start or a slow tunnel |
+| `exchanged_trigger_id` | The same click was handled twice |
+| `invalid_auth`, `not_authed` | The bot token is wrong or missing |
+| `TIMEOUT` | `views.open` did not answer within 2.5 seconds |
+
+**Cause.** The modal opens through `views.open` with the click's trigger, which
+Slack honours once, for three seconds. Nothing is recorded until the modal is
+submitted, so a modal that did not open leaves the case exactly as it was.
+
+**Action.** Click again: every click carries a new trigger. If it keeps failing,
+fix the token or whatever is slowing the response.
+
+**Not this failure.** A 409 instead of a 502 means the case does not allow that
+control now (a request is open, or it has already been escalated), and the card
+has been redrawn with the controls that apply. A modal that shows Slack's "We
+had some trouble connecting" when submitted was refused with 409: the card was
+replaced, or the case moved, while it was open. Nothing was recorded; close it
+and use the current card.
+
+---
+
+## Slack setup
+
+Five triage channels and one for alerts. The bot must be a member of each, or
+posting fails with `not_in_channel`.
+
+| Channel | Receives |
+|---|---|
+| `#ap-review`, `#ap-finance`, `#ap-procurement`, `#ap-duplicates` | Cases routed to that team, and cases handed or sent back to it |
+| `#ap-escalations` | Cases a person escalated (ADR-010). Routing never sends a case here |
+| `#ap-alerts` | Workflow failures (workflow 03) |
+
+**For escalation:** create `#ap-escalations` and invite the bot to it
+(`/invite @<bot name>`).
+
+**Interactivity:** in the Slack app's **Interactivity & Shortcuts**, interactivity
+must be on and the Request URL must be `https://<public host>/slack/interactions`.
+Modal submissions arrive at the same URL as button clicks, so there is nothing
+else to configure, and `views.open` needs no scope beyond the bot token. If
+clicks work but submissions do not, or neither does, check the Request URL still
+points at the current host: a quick tunnel gets a new hostname every time it
+restarts.
+
+---
+
+## Escalation (on-call)
 
 There is no on-call rotation. This is a portfolio project in a demo company with
 synthetic data, and the honest answer to "who do I page" is nobody.

@@ -3,7 +3,7 @@
 Decisions that shaped this system, with the reasoning and the alternatives
 rejected. ADR-001 through ADR-005 were made for the full design, before the v1
 scope was set, and are shown here with their v1 status. ADR-006 through ADR-009
-are v1 decisions, recorded in `BUILD-SCOPE-v1.md`.
+are v1 decisions, recorded in `BUILD-SCOPE-v1.md`. ADR-010 is a v1.1 decision.
 
 An ADR is not amended silently. Where v1 changed one, the original position is
 stated first and the change is marked.
@@ -233,3 +233,63 @@ card, because that card belongs to the team the case has left.
 **Rejected alternative.** Post an information-only card to the other team and
 keep the decision final. Simpler, with no schema change, but the receiving team
 could not act on the card and the system would not record what they decided.
+
+---
+
+## ADR-010: escalation and information requests keep the case open
+
+**Status:** accepted, v1.1.
+
+**Context.** "Escalate" and "Request more information" were recorded as final
+decisions. One click closed the run, nobody was told, and no reason or question
+was captured. A case "escalated" reached no one, and a question "requested"
+was asked of no one.
+
+**Decision.** Both become decisions that do not close the run, using the
+hand-off machinery of ADR-009, and both are made by a person.
+
+- **Escalate** asks for a reason (1 to 500 characters) in a Slack modal and
+  hands the case to `#ap-escalations` on a new card. The card shows the
+  reason, who escalated and when, and the path the case has taken. The card it
+  replaces says "Escalated by <person>: <reason>", and a click on it is refused
+  as superseded. Escalate is offered where it was: finance, procurement and
+  duplicate review, not AP review.
+- **One escalation per run**, enforced in the service and by a unique index
+  (`005c_escalation_and_information.sql`). There is no second level.
+- **Send back**, on the escalations card, asks for a note and returns the case
+  to the team that escalated it, on a new card showing the note. Escalate is
+  not offered again. **Mark reviewed** on the escalations card closes the case.
+- **Request more information** asks "What information is needed, and from
+  whom?" and records the question on the current card, which stays where it
+  is. While the question is open the card offers only "Information received",
+  and Escalate where Escalate is offered. The answer, also typed into a modal,
+  restores the card's controls, and both stay on the card. Any number of
+  rounds, one open at a time. A question asked before an escalation is still
+  open on the escalations card.
+- The server checks every click and submission against the case's state, not
+  only against the card, and refuses anything else with 409.
+- **No timers, deadlines, reminders or automatic escalation.** Nothing moves a
+  case except a person. Open question 4 in `docs/business-requirements.md` is
+  still open.
+- **No contact outside Slack.** Request more information notifies nobody: no
+  email, no direct message, nothing to a supplier. The person asking is
+  expected to ask.
+- Routing never produces the escalations destination (I41). Exactly one final
+  decision per run still holds.
+
+**Consequences.** A modal submission is answered as soon as its decision
+commits, and the card work (the update, and for a hand-off the new card) runs
+after the acknowledgement. If it fails, a hand-off waits in `REVIEW_READY` and
+the poll re-sends it after 15 minutes, as in ADR-009. A request or answer
+redraws the card in place; if that update is lost (ADR-007), the next refused
+click on the card redraws it with the controls that apply. A late redraw can
+briefly restore buttons on a card just decided, and the next click on it
+refreshes the card from the decision. Notes are stored, bounded, escaped on
+every card and never sent to a model (I43).
+
+**Rejected alternatives.** Keep Escalate final and only record a reason: the
+case would still reach no one. Let the person pick who to escalate to, or
+assign a named person: that needs a directory of people and roles this build
+does not have. Have Request more information email the supplier: contact
+outside Slack, and a write path the project rules out. An escalation timer:
+open question 4, which needs a policy from a real stakeholder first.

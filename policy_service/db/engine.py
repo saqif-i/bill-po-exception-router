@@ -23,6 +23,7 @@ REQUIRED_MIGRATIONS = (
     "004_semantic.sql",
     "005_triage_and_slack.sql",
     "005b_triage_handoff.sql",
+    "005c_escalation_and_information.sql",
 )
 
 

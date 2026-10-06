@@ -116,7 +116,8 @@ number.
 
 **BR-3. Every exception is routed to a destination determined by its reason, not
 by whoever is nearest.** Four destinations: finance, procurement, AP review,
-duplicate review.
+duplicate review. A fifth, escalations, is never a routing result: a case
+reaches it only when a person escalates it, with a reason (ADR-010).
 
 > **"Some of these are just wording. Don't make me read both documents to work
 > that out."**
@@ -168,10 +169,16 @@ The system therefore has a fixed authority boundary:
 | **Human** | The operational triage decision. | Nothing here approves, rejects or pays a bill. That happens in Xero, by a person, outside this system. |
 
 The Slack controls are named for what they are: mark reviewed, send to finance,
-send to procurement, request more information, escalate, close as duplicate. None
-is named approve or reject, because none of them is. Send to finance and send to
-procurement hand the case to that team, on a new card in its channel, and that
-team's decision closes it (ADR-009).
+send to procurement, request more information, information received, escalate,
+send back, close as duplicate. None is named approve or reject, because none of
+them is. Send to finance and send to procurement hand the case to that team, on a
+new card in its channel, and that team's decision closes it (ADR-009). Escalate
+asks for a reason and hands the case to `#ap-escalations`, once per case, where
+it is marked reviewed or sent back, with a note, to the team that escalated it.
+Request more information records a question on the card, which then offers only
+"information received" (and escalate, where escalate is offered) until the answer
+is recorded. Neither closes the case, and neither contacts anyone outside Slack
+(ADR-010).
 
 **This boundary is the requirement most likely to be questioned and the one least
 open to negotiation.** If it is relaxed, the system stops being a triage tool and
@@ -218,7 +225,7 @@ Recorded so that the absences read as decisions. Full reasoning in
 | BR-2 | `ExceptionCode` in `policy_service/domain/enums.py`, mirrored by the CHECK constraint in `migrations/003_reconciliation.sql` |
 | BR-3 | `policy_service/domain/routing.py` |
 | BR-4 | The invocation gate in `reconcile()`; the bounded contract in `policy_service/integrations/claude_contract.py` and `schemas/` |
-| BR-5 | Runs and decisions in `migrations/001_core_schema.sql`, `005_triage_and_slack.sql` and `005b_triage_handoff.sql`; Slack decision capture in `policy_service/api/slack.py` and `policy_service/domain/triage.py` |
+| BR-5 | Runs and decisions in `migrations/001_core_schema.sql`, `005_triage_and_slack.sql`, `005b_triage_handoff.sql` and `005c_escalation_and_information.sql`; Slack decision capture in `policy_service/api/slack.py` and `policy_service/domain/triage.py` |
 | BR-6 | `n8n/workflows/03-error-handler.json`, the failed-runs query and stuck-run warning in `scripts/capture_metrics.py`, and `docs/runbook.md` |
 | Section 6 boundary | Invariants I01, I02, I03, I05, I06, I26, I27. See `docs/invariant-register-v1.md`. |
 

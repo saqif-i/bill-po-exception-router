@@ -30,3 +30,6 @@ venv/
 .vscode/
 # Claude Code
 CLAUDE.md
+
+# JUnit report written by CI's pytest step
+pytest-report.xml
