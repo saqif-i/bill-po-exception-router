@@ -218,8 +218,11 @@ is the final one. The schema allows any number of hand-offs and exactly one
 final decision per run (`005b_triage_handoff.sql`), and rows stay immutable, so
 the record shows who handed the case over and who decided it.
 
-Only the current card's controls count. A click on a card a hand-off replaced,
-or on a control the current destination does not offer, is refused.
+Only the current card's controls count: the card on record must have been
+posted, for the run's current team, and be the card clicked. So a click on the
+card a hand-off replaced is refused, including in the gap before the new team's
+card is recorded and after it fails to post, as is a control the current
+destination does not offer.
 
 **Consequences.** The interaction handler makes two Slack calls, the card update
 and the new card, inside Slack's three-second window. If the new card fails to

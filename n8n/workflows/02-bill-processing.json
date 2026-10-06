@@ -58,7 +58,8 @@
           "id": "dFDsMT7F1BU9tCTZ",
           "name": "policy service bearer"
         }
-      }
+      },
+      "onError": "continueErrorOutput"
     },
     {
       "parameters": {
@@ -164,7 +165,8 @@
           "id": "dFDsMT7F1BU9tCTZ",
           "name": "policy service bearer"
         }
-      }
+      },
+      "onError": "continueErrorOutput"
     },
     {
       "parameters": {
@@ -204,7 +206,8 @@
           "id": "dFDsMT7F1BU9tCTZ",
           "name": "policy service bearer"
         }
-      }
+      },
+      "onError": "continueErrorOutput"
     },
     {
       "parameters": {},
@@ -252,7 +255,7 @@
     },
     {
       "parameters": {
-        "errorMessage": "=reconcile failed for run {{ $('Execution Input').item.json.run_id }}: {{ $json.statusCode }} {{ $json.body.error }}"
+        "errorMessage": "=reconcile failed for run {{ $('Execution Input').item.json.run_id }}: {{ $json.statusCode || 'no response' }} {{ ($json.body && $json.body.error) || ($json.error && ($json.error.message || $json.error)) || '' }}"
       },
       "type": "n8n-nodes-base.stopAndError",
       "typeVersion": 1,
@@ -298,7 +301,7 @@
     },
     {
       "parameters": {
-        "errorMessage": "=semantic review failed for run {{ $('Execution Input').item.json.run_id }}: {{ $json.statusCode }} {{ $json.body.error }}"
+        "errorMessage": "=semantic review failed for run {{ $('Execution Input').item.json.run_id }}: {{ $json.statusCode || 'no response' }} {{ ($json.body && $json.body.error) || ($json.error && ($json.error.message || $json.error)) || '' }}"
       },
       "type": "n8n-nodes-base.stopAndError",
       "typeVersion": 1,
@@ -365,7 +368,7 @@
     },
     {
       "parameters": {
-        "errorMessage": "=notify failed for run {{ $('Execution Input').item.json.run_id }}: {{ $json.statusCode }} {{ $json.body.error }}"
+        "errorMessage": "=notify failed for run {{ $('Execution Input').item.json.run_id }}: {{ $json.statusCode || 'no response' }} {{ ($json.body && $json.body.error) || ($json.error && ($json.error.message || $json.error)) || '' }}"
       },
       "type": "n8n-nodes-base.stopAndError",
       "typeVersion": 1,
@@ -395,6 +398,13 @@
         [
           {
             "node": "Reconcile Succeeded",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reconcile Failed",
             "type": "main",
             "index": 0
           }
@@ -445,6 +455,13 @@
             "type": "main",
             "index": 0
           }
+        ],
+        [
+          {
+            "node": "Semantic Review Failed",
+            "type": "main",
+            "index": 0
+          }
         ]
       ]
     },
@@ -489,6 +506,13 @@
         [
           {
             "node": "Notify Succeeded",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Notify Failed",
             "type": "main",
             "index": 0
           }

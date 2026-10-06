@@ -7,9 +7,12 @@ Built against **n8n 2.x**. Every node type and version below was checked against
 a live 2.39.6 instance rather than written from memory, and the original node
 configurations were validated against that instance's own schema. Nodes added
 since were not: the status checks and Stop and Error nodes in 02 copy
-configurations already validated in 01, but the **Alert** node in 03 sends a JSON
-body (`sendBody`, `specifyBody`, `jsonBody`), which no validated node does. After
-importing, open it and confirm it shows no warning. It retries three times, five
+configurations already validated in 01, but three settings appear in no
+validated node: the **Alert** node in 03 sends a JSON body (`sendBody`,
+`specifyBody`, `jsonBody`), the three HTTP nodes in 02 route their own failures
+to an error output (`onError: continueErrorOutput`), and Shape Failure in 03
+reads the run id out of the message with a regular expression. After importing,
+open those nodes and confirm none shows a warning. It retries three times, five
 seconds apart, and its key includes the failure time, so it stays unique if
 n8n's execution ids restart after a reset.
 
@@ -85,7 +88,8 @@ branch on rather than a thrown node error, so the retryable and failed paths can
 be distinguished. In 02, each of the three service calls is followed by a
 `statusCode == 200` check, and Notify Succeeded also requires `body.posted` or
 `body.already`, because a 200 alone is not proof that a card exists. Anything
-else goes to a Stop and Error node, whose message names the run, so the error
+else goes to a Stop and Error node, whose message names the run. So does a node
+that fails outright, such as a timeout, through its error output. The error
 workflow alerts `#ap-alerts` with the bill that failed, rather than the bill landing in Closed Without Review
 as though it had nothing to review.
 

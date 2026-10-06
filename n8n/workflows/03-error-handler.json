@@ -45,6 +45,12 @@
               "name": "failed_at",
               "value": "={{ $now.toISO() }}",
               "type": "string"
+            },
+            {
+              "id": "run-id",
+              "name": "run_id",
+              "value": "={{ ((($json.execution.error && $json.execution.error.message) || '').match(/for run ([0-9a-f-]{36})/) || [])[1] || '' }}",
+              "type": "string"
             }
           ]
         },
@@ -76,7 +82,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ workflow: $json.workflow, execution_id: $json.execution_id || null, failed_node: $json.failed_node || null, message: $json.message || null, failed_at: $json.failed_at || null }) }}",
+        "jsonBody": "={{ JSON.stringify({ workflow: $json.workflow, run_id: $json.run_id || null, execution_id: $json.execution_id || null, failed_node: $json.failed_node || null, message: $json.message || null, failed_at: $json.failed_at || null }) }}",
         "options": {
           "timeout": 30000
         }
